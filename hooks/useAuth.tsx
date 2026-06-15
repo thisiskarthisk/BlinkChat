@@ -1,0 +1,472 @@
+// import { Session, User } from '@supabase/supabase-js';
+// import React, {
+//     createContext,
+//     useContext,
+//     useEffect,
+//     useState,
+// } from 'react';
+
+// import { supabase } from '../lib/supabase';
+
+// interface Profile {
+//   id: string;
+
+//   full_name: string | null;
+
+//   username: string | null;
+
+//   email: string | null;
+
+//   phone: string | null;
+
+//   avatar_url: string | null;
+
+//   status: string | null;
+
+//   is_online: boolean;
+
+//   last_seen: string | null;
+// }
+
+// interface AuthContextType {
+//   session: Session | null;
+
+//   user: User | null;
+
+//   profile: Profile | null;
+
+//   loading: boolean;
+
+//   signIn: (
+//     email: string,
+//     password: string
+//   ) => Promise<any>;
+
+//   signUp: (
+//     email: string,
+//     password: string,
+//     metadata?: {
+//       full_name?: string;
+//       phone?: string;
+//     }
+//   ) => Promise<any>;
+
+//   signOut: () => Promise<void>;
+// }
+
+// const AuthContext =
+//   createContext<AuthContextType | undefined>(
+//     undefined
+//   );
+
+// export function AuthProvider({
+//   children,
+// }: {
+//   children: React.ReactNode;
+// }) {
+//   const [session, setSession] =
+//     useState<Session | null>(null);
+
+//   const [user, setUser] =
+//     useState<User | null>(null);
+
+//   const [profile, setProfile] =
+//     useState<Profile | null>(null);
+
+//   const [loading, setLoading] =
+//     useState(true);
+
+//   const fetchProfile = async (
+//     userId: string
+//   ) => {
+//     const { data, error } =
+//       await supabase
+//         .from('profiles')
+//         .select('*')
+//         .eq('id', userId)
+//         .maybeSingle();
+
+//     if (error) {
+//       console.log(error);
+//       return null;
+//     }
+
+//     return data;
+//   };
+
+//   const ensureProfile = async (
+//     authUser: User
+//   ) => {
+//     let userProfile =
+//       await fetchProfile(authUser.id);
+
+//     if (!userProfile) {
+//       const { data } =
+//         await supabase
+//           .from('profiles')
+//           .upsert([
+//             {
+//               id: authUser.id,
+
+//               full_name:
+//                 authUser.user_metadata
+//                   ?.full_name || '',
+
+//               username:
+//                 authUser.email?.split(
+//                   '@'
+//                 )[0] || '',
+
+//               email:
+//                 authUser.email || '',
+
+//               phone:
+//                 authUser.user_metadata
+//                   ?.phone || '',
+
+//               status:
+//                 'Hey there!',
+
+//               is_online: true,
+//             },
+//           ])
+//           .select()
+//           .single();
+
+//       userProfile = data;
+//     }
+
+//     return userProfile;
+//   };
+
+//   const updateAuthState = async (
+//     newSession: Session | null
+//   ) => {
+//     setLoading(true);
+
+//     setSession(newSession);
+
+//     const currentUser =
+//       newSession?.user ?? null;
+
+//     setUser(currentUser);
+
+//     if (currentUser) {
+//       const profile = await ensureProfile(currentUser);
+//       setProfile(profile);
+      
+//       // Mark as online
+//       await supabase
+//         .from('profiles')
+//         .update({ is_online: true })
+//         .eq('id', currentUser.id);
+//     } else {
+//       setProfile(null);
+//     }
+
+//     setLoading(false);
+//   };
+
+//   useEffect(() => {
+//     supabase.auth
+//       .getSession()
+//       .then(
+//         ({
+//           data: { session },
+//         }) => {
+//           updateAuthState(session);
+//         }
+//       );
+
+//     const {
+//       data: { subscription },
+//     } =
+//       supabase.auth.onAuthStateChange(
+//         (_event, session) => {
+//           updateAuthState(session);
+//         }
+//       );
+
+//     return () =>
+//       subscription.unsubscribe();
+//   }, []);
+
+//   const signIn = async (
+//     email: string,
+//     password: string
+//   ) => {
+//     const { data, error } =
+//       await supabase.auth.signInWithPassword(
+//         {
+//           email,
+//           password,
+//         }
+//       );
+
+//     if (error) throw error;
+
+//     return data;
+//   };
+
+//   const signUp = async (
+//     email: string,
+//     password: string,
+//     metadata?: {
+//       full_name?: string;
+//       phone?: string;
+//     }
+//   ) => {
+//     const { data, error } =
+//       await supabase.auth.signUp({
+//         email,
+//         password,
+
+//         options: {
+//           data: {
+//             full_name:
+//               metadata?.full_name,
+
+//             phone:
+//               metadata?.phone,
+//           },
+//         },
+//       });
+
+//     if (error) throw error;
+
+//     if (data.user) {
+//       await supabase
+//         .from('profiles')
+//         .upsert([
+//           {
+//             id: data.user.id,
+
+//             full_name:
+//               metadata?.full_name ||
+//               '',
+
+//             username:
+//               email.split('@')[0],
+
+//             email,
+
+//             phone:
+//               metadata?.phone ||
+//               '',
+
+//             status:
+//               'Hey there!',
+
+//             is_online: true,
+//           },
+//         ]);
+//     }
+
+//     return data;
+//   };
+
+//   const signOut = async () => {
+//     await supabase.auth.signOut();
+//   };
+
+//   return (
+//     <AuthContext.Provider
+//       value={{
+//         session,
+//         user,
+//         profile,
+//         loading,
+//         signIn,
+//         signUp,
+//         signOut,
+//       }}
+//     >
+//       {children}
+//     </AuthContext.Provider>
+//   );
+// }
+
+// export function useAuth() {
+//   const context =
+//     useContext(AuthContext);
+
+//   if (!context) {
+//     throw new Error(
+//       'useAuth must be used within AuthProvider'
+//     );
+//   }
+
+//   return context;
+// }
+
+
+
+
+/**
+ * hooks/useAuth.tsx
+ * 
+ * - Session persists across app close/open (Supabase AsyncStorage handles this)
+ * - On login: mark user online
+ * - On logout / app kill: mark user offline
+ * - Profile auto-created if missing
+ */
+
+import { Session, User } from "@supabase/supabase-js";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { AppState, AppStateStatus } from "react-native";
+import { supabase } from "../lib/supabase";
+
+interface Profile {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  status: string | null;
+  is_online: boolean;
+  last_seen: string | null;
+}
+
+interface AuthContextType {
+  session: Session | null;
+  user: User | null;
+  profile: Profile | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<any>;
+  signUp: (email: string, password: string, metadata?: { full_name?: string; phone?: string }) => Promise<any>;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const appState = useRef(AppState.currentState);
+
+  // ── Mark online/offline based on app state ──
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (nextState: AppStateStatus) => {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) return;
+
+      if (nextState === "active") {
+        // App came to foreground
+        await supabase.from("profiles").update({ is_online: true }).eq("id", currentUser.id);
+      } else if (nextState === "background" || nextState === "inactive") {
+        // App went to background
+        await supabase.from("profiles").update({
+          is_online: false,
+          last_seen: new Date().toISOString(),
+        }).eq("id", currentUser.id);
+      }
+      appState.current = nextState;
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // ── Session init + listener ──
+  useEffect(() => {
+    // Get existing session (persisted by Supabase AsyncStorage)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
+
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        handleSession(session);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSession = async (newSession: Session | null) => {
+    setLoading(true);
+    setSession(newSession);
+    const u = newSession?.user ?? null;
+    setUser(u);
+
+    if (u) {
+      const p = await ensureProfile(u);
+      setProfile(p);
+      // Mark online
+      await supabase.from("profiles").update({ is_online: true }).eq("id", u.id);
+    } else {
+      setProfile(null);
+    }
+    setLoading(false);
+  };
+
+  const ensureProfile = async (authUser: User): Promise<Profile | null> => {
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", authUser.id)
+      .maybeSingle();
+
+    if (existing) return existing;
+
+    // Auto-create profile if missing
+    const { data } = await supabase
+      .from("profiles")
+      .upsert({
+        id: authUser.id,
+        full_name: authUser.user_metadata?.full_name || "",
+        username: authUser.email?.split("@")[0] || `user_${authUser.id.slice(0, 6)}`,
+        email: authUser.email || "",
+        phone: authUser.user_metadata?.phone || "",
+        status: "Hey there! I am using BlinkChat",
+        is_online: true,
+        last_seen: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    return data;
+  };
+
+  const signIn = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  };
+
+  const signUp = async (email: string, password: string, metadata?: { full_name?: string; phone?: string }) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata },
+    });
+    if (error) throw error;
+    return data;
+  };
+
+  const signOut = async () => {
+    // Mark offline before logout
+    if (user) {
+      await supabase.from("profiles").update({
+        is_online: false,
+        last_seen: new Date().toISOString(),
+      }).eq("id", user.id);
+    }
+    await supabase.auth.signOut();
+  };
+
+  return (
+    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signUp, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be inside AuthProvider");
+  return ctx;
+}
