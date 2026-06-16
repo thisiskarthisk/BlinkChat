@@ -150,6 +150,64 @@ export async function deleteMessage(
 
 /*
 |--------------------------------------------------------------------------
+| Mark Messages Delivered
+|--------------------------------------------------------------------------
+*/
+
+export async function markMessagesDelivered(
+  chatId: string,
+  userId: string
+) {
+  try {
+    const { error } = await supabase
+      .from("messages")
+      .update({
+        is_delivered: true,
+      })
+      .eq("chat_id", chatId)
+      .neq("sender_id", userId)
+      .eq("is_delivered", false);
+
+    if (error) throw error;
+
+    return true;
+  } catch (error) {
+    console.log("Delivery Status Error:", error);
+    return false;
+  }
+}
+
+export async function markAllMessagesDelivered(
+  userId: string
+) {
+  try {
+    // Get all chat IDs for this user
+    const { data: chats } = await supabase
+      .from("chat_members")
+      .select("chat_id")
+      .eq("user_id", userId);
+
+    if (!chats || chats.length === 0) return;
+
+    const chatIds = chats.map(c => c.chat_id);
+
+    const { error } = await supabase
+      .from("messages")
+      .update({
+        is_delivered: true,
+      })
+      .in("chat_id", chatIds)
+      .neq("sender_id", userId)
+      .eq("is_delivered", false);
+
+    if (error) throw error;
+  } catch (error) {
+    console.log("markAllMessagesDelivered Error:", error);
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
 | Mark Message Read
 |--------------------------------------------------------------------------
 */
@@ -207,4 +265,87 @@ export async function unsubscribeMessages(
   channel: any
 ) {
   await supabase.removeChannel(channel);
+}
+/*
+|--------------------------------------------------------------------------
+| Clear Chat
+|--------------------------------------------------------------------------
+*/
+
+export async function clearChat(chatId: string) {
+  try {
+    const { error } = await supabase
+      .from("messages")
+      .delete()
+      .eq("chat_id", chatId);
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.log("Clear Chat Error:", error);
+    return false;
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Update Chat/Member Settings
+|--------------------------------------------------------------------------
+*/
+
+export async function updateChatSettings(chatId: string, settings: any) {
+  try {
+    const { error } = await supabase
+      .from("chats")
+      .update(settings)
+      .eq("id", chatId);
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.log("Update Chat Settings Error:", error);
+    return false;
+  }
+}
+
+export async function updateMemberSettings(chatId: string, userId: string, settings: any) {
+  try {
+    const { error } = await supabase
+      .from("chat_members")
+      .update(settings)
+      .eq("chat_id", chatId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.log("Update Member Settings Error:", error);
+    return false;
+  }
+}
+
+export async function getChatDetails(chatId: string, userId: string) {
+  try {
+    const { data: chat, error: chatError } = await supabase
+      .from("chats")
+      .select("*")
+      .eq("id", chatId)
+      .single();
+
+    if (chatError) throw chatError;
+
+    const { data: member, error: memberError } = await supabase
+      .from("chat_members")
+      .select("*")
+      .eq("chat_id", chatId)
+      .eq("user_id", userId)
+      .single();
+
+    if (memberError) throw memberError;
+
+    return { ...chat, ...member };
+  } catch (error) {
+    console.log("Get Chat Details Error:", error);
+    return null;
+  }
 }

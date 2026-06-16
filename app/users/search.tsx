@@ -244,11 +244,13 @@
  */
 
 import { supabase } from "@/lib/supabase";
+import { sendFriendRequest } from "@/services/friendService";
 import { createOrGetChat } from "@/services/chatService";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   StyleSheet,
   Text,
@@ -282,29 +284,75 @@ export default function SearchScreen() {
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openingChat, setOpeningChat] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [existingChats, setExistingChats] = useState<string[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const searchRef = useRef<TextInput>(null);
 
   useEffect(() => {
-    loadUsers();
+    loadData();
     setTimeout(() => searchRef.current?.focus(), 300);
   }, []);
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     if (!user?.id) return;
+    setLoading(true);
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .neq("id", user.id)
-        .order("full_name", { ascending: true });
+      // Get existing chat user IDs
+      const { data: members } = await supabase
+        .from("chat_members")
+        .select("chat_id")
+        .eq("user_id", user.id);
+      
+      if (members && members.length > 0) {
+        const chatIds = members.map(m => m.chat_id);
+        const { data: others } = await supabase
+          .from("chat_members")
+          .select("user_id")
+          .in("chat_id", chatIds)
+          .neq("user_id", user.id);
+        
+        if (others) setExistingChats(others.map(o => o.user_id));
+      }
 
-      if (error) { console.log(error); return; }
-      setUsers(data || []);
+      // Get pending requests sent by current user
+      const { data: requests } = await supabase
+        .from("friend_requests")
+        .select("receiver_id, status, rejection_count")
+        .eq("sender_id", user.id);
+      
+      if (requests) setPendingRequests(requests);
+
+      await loadUsers(requests || []);
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadUsers = async (requests: any[] = pendingRequests) => {
+    if (!user?.id) return;
+    
+    // Get blocked users to hide them
+    const { data: blocked } = await supabase
+      .from("blocked_users")
+      .select("blocked_id")
+      .eq("blocker_id", user.id);
+    
+    const blockedIds = blocked?.map(b => b.blocked_id) || [];
+
+    // Get users who rejected current user 3+ times
+    const rejections = requests.filter(r => (r.rejection_count || 0) >= 3).map(r => r.receiver_id);
+
+    const hideIds = [...blockedIds, ...rejections, user.id, '00000000-0000-0000-0000-000000000000'];
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .not("id", "in", `(${hideIds.join(',')})`)
+      .order("full_name", { ascending: true });
+
+    if (error) { console.log(error); return; }
+    setUsers(data || []);
   };
 
   const searchUsers = async (text: string) => {
@@ -322,36 +370,79 @@ export default function SearchScreen() {
     setUsers(data || []);
   };
 
-  const openChat = async (selectedUser: any) => {
-    if (!user?.id || openingChat) return;
-    try {
-      setOpeningChat(selectedUser.id);
-      const chatId = await createOrGetChat(user.id, selectedUser.id);
-      if (!chatId) { alert("Could not open chat. Try again."); return; }
+  const handleAction = async (selectedUser: any) => {
+    if (!user?.id || actionId) return;
+    
+    const isFriend = existingChats.includes(selectedUser.id);
+    const request = pendingRequests.find(r => r.receiver_id === selectedUser.id);
 
-      router.push({
-        pathname: "/chat/[id]",
-        params: {
-          id: chatId,
-          name: selectedUser.full_name || selectedUser.username || "User",
-        },
-      });
-    } finally {
-      setOpeningChat(null);
+    if (isFriend) {
+      // Open Chat
+      try {
+        setActionId(selectedUser.id);
+        const chatId = await createOrGetChat(user.id, selectedUser.id);
+        if (chatId) {
+          router.push({
+            pathname: "/chat/[id]",
+            params: { id: chatId, name: selectedUser.full_name || selectedUser.username || "User" },
+          });
+        }
+      } finally {
+        setActionId(null);
+      }
+    } else if (request && request.status === "pending") {
+      Alert.alert("Request Pending", "You have already sent a request to this user.");
+    } else {
+      // Send Request (New or Re-send if rejected)
+      const actionTitle = request?.status === "rejected" ? "Re-send Request" : "Send Request";
+      const actionMsg = request?.status === "rejected" 
+        ? `This user previously rejected your request. Do you want to try sending it again?`
+        : `Do you want to send a chat request to ${selectedUser.full_name}?`;
+
+      Alert.alert(
+        actionTitle,
+        actionMsg,
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Send", 
+            onPress: async () => {
+              setActionId(selectedUser.id);
+              const { error } = await sendFriendRequest(user.id, selectedUser.id);
+              if (error) {
+                Alert.alert("Error", error);
+              } else {
+                Alert.alert("Success", "Request sent!");
+                loadData();
+              }
+              setActionId(null);
+            }
+          }
+        ]
+      );
     }
   };
 
   const renderUser = ({ item }: any) => {
     const name = item.full_name || item.username || "User";
     const avatarColor = getAvatarColor(name);
-    const isLoading = openingChat === item.id;
+    const isLoading = actionId === item.id;
+    
+    const isFriend = existingChats.includes(item.id);
+    const request = pendingRequests.find(r => r.receiver_id === item.id);
+
+    let statusText = "Send Request";
+    let statusColor = "#2563EB";
+    if (isFriend) { statusText = "Chat"; statusColor = "#10B981"; }
+    else if (request?.status === "pending") { statusText = "Pending"; statusColor = "#F59E0B"; }
+    else if (request?.status === "rejected") { statusText = "Rejected"; statusColor = "#EF4444"; }
 
     return (
       <TouchableOpacity
         style={styles.userCard}
-        onPress={() => openChat(item)}
+        onPress={() => handleAction(item)}
         activeOpacity={0.7}
-        disabled={!!openingChat}
+        disabled={!!actionId}
       >
         <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
           <Text style={styles.avatarText}>{getInitials(name)}</Text>
@@ -367,20 +458,15 @@ export default function SearchScreen() {
         </View>
 
         <View style={styles.right}>
-          {item.is_online ? (
-            <View style={styles.onlineBadge}>
-              <Text style={styles.onlineBadgeText}>Online</Text>
-            </View>
-          ) : null}
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#2563EB" style={{ marginTop: 4 }} />
-          ) : (
-            <Text style={styles.chevron}>›</Text>
-          )}
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + "15" }]}>
+            <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusText}</Text>
+          </View>
+          {isLoading && <ActivityIndicator size="small" color="#2563EB" style={{ marginTop: 4 }} />}
         </View>
       </TouchableOpacity>
     );
   };
+
 
   return (
     <View style={styles.container}>
@@ -551,7 +637,18 @@ const styles = StyleSheet.create({
 
   status: { fontSize: 12, color: "#9CA3AF", marginTop: 3 },
 
-  right: { alignItems: "center", gap: 4 },
+  right: { alignItems: "center", gap: 4, minWidth: 80 },
+
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   onlineBadge: {
     backgroundColor: "#DCFCE7",

@@ -1,6 +1,6 @@
 // 
 import { router } from 'expo-router'
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import AnimatedSplashOverlay from '../components/AnimatedSplashOverlay'
 
 export default function Index() {

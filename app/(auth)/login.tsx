@@ -288,9 +288,11 @@
 
 
 import { router } from "expo-router";
-import { useState } from "react";
+import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react-native";
+import React, { useState } from "react";
 import {
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -299,10 +301,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Dimensions,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react-native";
 
 const { width } = Dimensions.get('window');
 

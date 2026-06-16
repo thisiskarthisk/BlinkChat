@@ -515,9 +515,9 @@
 
 
 
-import { LogOut, SquarePen, Search, X } from "lucide-react-native";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { Bell, LogOut, Search, SquarePen, X } from "lucide-react-native";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -531,6 +531,7 @@ import {
 } from "react-native";
 import { useAuth } from "../../hooks/useAuth";
 import { supabase } from "../../lib/supabase";
+import { markAllMessagesDelivered } from "../../services/chatService";
 
 function getInitials(name: string) {
   if (!name) return "?";
@@ -577,10 +578,12 @@ export default function HomeScreen() {
   const [filteredChats, setFilteredChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
     try {
+      await markAllMessagesDelivered(user.id);
       const { data: myChats, error } = await supabase
         .from("chat_members")
         .select("chat_id")
@@ -646,12 +649,23 @@ export default function HomeScreen() {
 
       setChats(result);
       applySearch(result, search);
+      loadRequests();
     } catch (err) {
       console.log("loadChats error:", err);
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, search]);
+
+  const loadRequests = async () => {
+    if (!user?.id) return;
+    const { count } = await supabase
+      .from("friend_requests")
+      .select("*", { count: "exact", head: true })
+      .eq("receiver_id", user.id)
+      .eq("status", "pending");
+    setPendingRequestsCount(count || 0);
+  };
 
   function applySearch(data: any[], query: string) {
     if (!query.trim()) {
@@ -680,10 +694,11 @@ export default function HomeScreen() {
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, loadChats)
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" }, loadChats)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, loadChats)
+      .on("postgres_changes", { event: "*", schema: "public", table: "friend_requests", filter: `receiver_id=eq.${user?.id}` }, loadRequests)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [loadChats]);
+  }, [loadChats, user?.id]);
 
   const logout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -770,6 +785,17 @@ export default function HomeScreen() {
           </Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => router.push("/notifications")}
+          >
+            <Bell size={20} color="#6B7280" />
+            {pendingRequestsCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{pendingRequestsCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.newChatBtn}
             onPress={() => router.push("/users/search")}
@@ -880,6 +906,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#EFF6FF",
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  notifBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+
+  notifBadge: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    backgroundColor: "#EF4444",
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+  },
+
+  notifBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
   },
 
   newChatIcon: { fontSize: 18 },

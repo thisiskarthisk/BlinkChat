@@ -1215,9 +1215,13 @@
 
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Audio } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
+import { Mic, Pause, Phone, Play, StopCircle, Video } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionSheetIOS,
@@ -1233,6 +1237,54 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ChatSettingsModal from "../../components/ChatSettingsModal";
+import {
+  clearChat,
+  getChatDetails,
+  updateChatSettings,
+  updateMemberSettings
+} from "../../services/chatService";
+import { blockUser } from "../../services/friendService";
+
+// ─── Local Caching ──────────────────────────────────────────
+
+const CHAT_MEDIA_DIR = `${FileSystem.documentDirectory}chat-media/`;
+
+async function ensureMediaDir() {
+  const dirInfo = await FileSystem.getInfoAsync(CHAT_MEDIA_DIR);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(CHAT_MEDIA_DIR, { intermediates: true });
+  }
+}
+
+async function getLocalMediaUri(remoteUrl: string, mediaPath: string) {
+  if (!mediaPath) return remoteUrl;
+  await ensureMediaDir();
+  const fileName = mediaPath.split("/").pop();
+  const localUri = `${CHAT_MEDIA_DIR}${fileName}`;
+  
+  const fileInfo = await FileSystem.getInfoAsync(localUri);
+  if (fileInfo.exists) return localUri;
+  
+  try {
+    const { uri } = await FileSystem.downloadAsync(remoteUrl, localUri);
+    return uri;
+  } catch (e) {
+    console.log("Download error:", e);
+    return remoteUrl;
+  }
+}
+
+async function deleteRemoteMedia(mediaPath: string) {
+  try {
+    const { error } = await supabase.storage.from("chat-media").remove([mediaPath]);
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.log("Delete remote error:", e);
+    return false;
+  }
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -1273,7 +1325,7 @@ async function uploadToStorage(
   uri: string,
   mimeType: string,
   folder: string
-): Promise<string | null> {
+): Promise<{ url: string; path: string } | null> {
   try {
     const ext = uri.split(".").pop()?.split("?")[0] || "bin";
     const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -1292,7 +1344,7 @@ async function uploadToStorage(
     }
 
     const { data } = supabase.storage.from("chat-media").getPublicUrl(path);
-    return data.publicUrl;
+    return { url: data.publicUrl, path };
   } catch (e: any) {
     console.log("uploadToStorage:", e.message);
     return null;
@@ -1301,8 +1353,115 @@ async function uploadToStorage(
 
 // ─── Message Bubble ──────────────────────────────────────────
 
+// ─── Message Bubble ──────────────────────────────────────────
+
+function VoiceMessagePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const formatDur = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  async function playSound() {
+    try {
+      if (sound) {
+        await sound.playAsync();
+        setIsPlaying(true);
+      } else {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: true },
+          onPlaybackStatusUpdate
+        );
+        setSound(newSound);
+        setIsPlaying(true);
+      }
+    } catch (e) {
+      console.log("Play sound error:", e);
+    }
+  }
+
+  async function pauseSound() {
+    if (sound) {
+      await sound.pauseAsync();
+      setIsPlaying(false);
+    }
+  }
+
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded) {
+      setPosition(status.positionMillis);
+      setDuration(status.durationMillis);
+      if (status.didJustFinish) {
+        setIsPlaying(false);
+        setPosition(0);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return sound ? () => { sound.unloadAsync(); } : undefined;
+  }, [sound]);
+
+  const progress = duration > 0 ? (position / duration) * 100 : 0;
+
+  return (
+    <View style={styles.voicePlayer}>
+      <TouchableOpacity onPress={isPlaying ? pauseSound : playSound} style={styles.playBtn}>
+        {isPlaying ? <Pause size={20} color={isMine ? "#FFF" : "#2563EB"} /> : <Play size={20} color={isMine ? "#FFF" : "#2563EB"} />}
+      </TouchableOpacity>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressBar, { width: `${progress}%`, backgroundColor: isMine ? "#BFDBFE" : "#2563EB" }]} />
+      </View>
+      <Text style={[styles.voiceTime, { color: isMine ? "#BFDBFE" : "#6B7280" }]}>
+        {formatDur(Math.floor(position / 1000))}
+      </Text>
+    </View>
+  );
+}
+
 function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
   const type: string = item.message_type || "text";
+  const [localUri, setLocalUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (type !== "text") {
+      loadLocal();
+    }
+  }, [item.message, item.media_path]);
+
+  const loadLocal = async () => {
+    try {
+      const uri = await getLocalMediaUri(item.message, item.media_path);
+      if (uri) {
+        setLocalUri(uri);
+        // ONLY cleanup IF the local download was successful
+        if (!isMine && !item.is_seen && item.media_path && uri.startsWith("file://")) {
+           await deleteRemoteMedia(item.media_path);
+        }
+      }
+    } catch (e) {
+      console.log("loadLocal error:", e);
+    }
+  };
+
+  // ─── Important: Don't render player until localUri is ready to avoid AVPlayer -1008 error ───
+  if (type !== "text" && !localUri) {
+    return (
+      <View style={[styles.msgContainer, isMine ? styles.myContainer : styles.otherContainer]}>
+        <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble, { opacity: 0.6 }]}>
+           <ActivityIndicator size="small" color={isMine ? "#FFF" : "#2563EB"} />
+        </View>
+      </View>
+    );
+  }
+
+  const displayUri = localUri || item.message;
 
   return (
     <View style={[styles.msgContainer, isMine ? styles.myContainer : styles.otherContainer]}>
@@ -1310,10 +1469,14 @@ function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
 
         {type === "image" && (
           <Image
-            source={{ uri: item.message }}
+            source={{ uri: displayUri }}
             style={styles.msgImage}
             resizeMode="cover"
           />
+        )}
+
+        {type === "audio" && (
+          <VoiceMessagePlayer uri={displayUri} isMine={isMine} />
         )}
 
         {type === "video" && (
@@ -1359,8 +1522,148 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<any[]>([]);
   const [otherUser, setOtherUser] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordDuration, setRecordDuration] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Permission Denied", "Microphone access is needed to record voice messages.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(recording);
+      setIsRecording(true);
+      setRecordDuration(0);
+      timerRef.current = setInterval(() => {
+        setRecordDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Failed to start recording", err);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (uri) {
+        await sendMedia(uri, "audio/m4a", "audio");
+      }
+    } catch (err) {
+      console.error("Failed to stop recording", err);
+    }
+    setRecording(null);
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [chatSettings, setChatSettings] = useState<any>({
+    chat_theme: "Default",
+    disappearing_messages_ttl: null,
+    is_locked: false,
+  });
+  const [backgroundConfig, setBackgroundConfig] = useState<{
+    type: "color" | "image";
+    value: string;
+  }>({ type: "color", value: "#EEF2FF" });
 
   const flatListRef = useRef<FlatList>(null);
+
+  const loadBackgroundConfig = useCallback(async () => {
+    if (!otherUser?.id) return;
+    try {
+      const type = await AsyncStorage.getItem(`chat_bg_type_${otherUser.id}`);
+      if (type === "image") {
+        const uri = await AsyncStorage.getItem(`chat_image_uri_${otherUser.id}`);
+        if (uri) setBackgroundConfig({ type: "image", value: uri });
+      } else {
+        const hex = await AsyncStorage.getItem(`chat_color_hex_${otherUser.id}`);
+        setBackgroundConfig({ type: "color", value: hex || "#EEF2FF" });
+      }
+    } catch (e) {
+      console.error("Load BG error:", e);
+    }
+  }, [otherUser?.id]);
+
+  useEffect(() => {
+    if (otherUser) loadBackgroundConfig();
+  }, [otherUser, loadBackgroundConfig, settingsVisible]);
+
+  const loadChatDetails = useCallback(async () => {
+    if (!id || !user?.id) return;
+    const details = await getChatDetails(id, user.id);
+    if (details) {
+      setChatSettings({
+        chat_theme: details.chat_theme || "Default",
+        disappearing_messages_ttl: details.disappearing_messages_ttl,
+        is_locked: details.is_locked || false,
+      });
+    }
+  }, [id, user?.id]);
+
+  useEffect(() => {
+    loadChatDetails();
+  }, [loadChatDetails]);
+
+  const handleUpdateSettings = async (settings: any) => {
+    if (!id) return;
+    const success = await updateChatSettings(id, settings);
+    if (success) {
+      setChatSettings((prev: any) => ({ ...prev, ...settings }));
+    }
+  };
+
+  const handleUpdateMemberSettings = async (settings: any) => {
+    if (!id || !user?.id) return;
+    const success = await updateMemberSettings(id, user.id, settings);
+    if (success) {
+      setChatSettings((prev: any) => ({ ...prev, ...settings }));
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!id) return;
+    const success = await clearChat(id);
+    if (success) {
+      setMessages([]);
+      setSettingsVisible(false);
+      Alert.alert("Success", "Chat cleared.");
+    }
+  };
+
+  const handleBlockUser = async () => {
+    if (!user?.id || !otherUser?.id) return;
+    const { success, error } = await blockUser(user.id, otherUser.id);
+    if (success) {
+      Alert.alert("Blocked", `${otherUser.full_name} has been blocked.`);
+      router.back();
+    } else {
+      Alert.alert("Error", error);
+    }
+  };
 
   const scrollBottom = useCallback(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
@@ -1370,11 +1673,21 @@ export default function ChatScreen() {
     if (!user?.id || !id) return;
     await supabase
       .from("messages")
-      .update({ is_seen: true })
+      .update({ is_seen: true, is_delivered: true })
       .eq("chat_id", id)
       .neq("sender_id", user.id)
       .eq("is_seen", false);
   }, [id, user?.id]);
+
+  const markDelivered = useCallback(async (messageId: string) => {
+    if (!user?.id) return;
+    await supabase
+      .from("messages")
+      .update({ is_delivered: true })
+      .eq("id", messageId)
+      .neq("sender_id", user.id)
+      .eq("is_delivered", false);
+  }, [user?.id]);
 
   const loadMessages = useCallback(async () => {
     const { data } = await supabase
@@ -1382,9 +1695,21 @@ export default function ChatScreen() {
       .select("*")
       .eq("chat_id", id)
       .order("created_at", { ascending: true });
-    setMessages(data || []);
+    
+    if (data) {
+      setMessages(data);
+      // Mark all received messages as delivered if they aren't already
+      const undelivered = data.filter(m => m.sender_id !== user?.id && !m.is_delivered);
+      if (undelivered.length > 0) {
+        await supabase
+          .from("messages")
+          .update({ is_delivered: true })
+          .in("id", undelivered.map(m => m.id))
+          .neq("sender_id", user?.id);
+      }
+    }
     scrollBottom();
-  }, [id]);
+  }, [id, user?.id]);
 
   const getOtherUser = useCallback(async () => {
     const { data: member } = await supabase
@@ -1418,7 +1743,12 @@ export default function ChatScreen() {
           if (payload.eventType === "INSERT") {
             setMessages((prev) => {
               if (prev.find((m) => m.id === payload.new.id)) return prev;
-              if (payload.new.sender_id !== user?.id) markSeen();
+              
+              if (payload.new.sender_id !== user?.id) {
+                // If we are the recipient, mark as delivered (and seen if we are in chat)
+                markDelivered(payload.new.id);
+                markSeen();
+              }
               return [...prev, payload.new];
             });
             scrollBottom();
@@ -1456,6 +1786,8 @@ export default function ChatScreen() {
     if (!text || !user?.id) return;
 
     const tempId = `temp_${Date.now()}`;
+    const now = new Date().toISOString();
+    
     setMessages((prev) => [
       ...prev,
       {
@@ -1464,9 +1796,9 @@ export default function ChatScreen() {
         sender_id: user.id,
         message: text,
         message_type: "text",
-        created_at: new Date().toISOString(),
+        created_at: now,
         is_seen: false,
-        is_delivered: true,
+        is_delivered: false,
       },
     ]);
     setMessage("");
@@ -1474,7 +1806,14 @@ export default function ChatScreen() {
 
     const { data, error } = await supabase
       .from("messages")
-      .insert({ chat_id: id, sender_id: user.id, message: text, message_type: "text", is_seen: false, is_delivered: true })
+      .insert({ 
+        chat_id: id, 
+        sender_id: user.id, 
+        message: text, 
+        message_type: "text", 
+        is_seen: false, 
+        is_delivered: false 
+      })
       .select()
       .single();
 
@@ -1484,25 +1823,46 @@ export default function ChatScreen() {
   };
 
   // ── Send media ──
-  const sendMedia = async (uri: string, mimeType: string, type: "image" | "video" | "file", fileName?: string) => {
+  // ── Send media ──
+  const sendMedia = async (uri: string, mimeType: string, type: "image" | "video" | "file" | "audio", fileName?: string) => {
     if (!user?.id) return;
     setUploading(true);
     try {
-      const url = await uploadToStorage(uri, mimeType, type === "image" ? "images" : type === "video" ? "videos" : "files");
-      if (!url) {
+      const folder = type === "image" ? "images" : type === "video" ? "videos" : type === "audio" ? "audio" : "files";
+      const result = await uploadToStorage(uri, mimeType, folder);
+      if (!result) {
         Alert.alert("Upload failed", "Check your Supabase storage bucket 'chat-media' is public.");
         return;
       }
+      
+      const { url, path } = result;
+
       const { data } = await supabase
         .from("messages")
-        .insert({ chat_id: id, sender_id: user.id, message: url, message_type: type, file_name: fileName, is_seen: false, is_delivered: true })
+        .insert({ 
+          chat_id: id, 
+          sender_id: user.id, 
+          message: url, 
+          media_path: path,
+          message_type: type, 
+          file_name: fileName, 
+          is_seen: false, 
+          is_delivered: false 
+        })
         .select()
         .single();
-      if (data) { setMessages((prev) => [...prev, data]); scrollBottom(); }
+      
+      if (data) { 
+        setMessages((prev) => [...prev, data]); 
+        scrollBottom(); 
+        // Cache it locally immediately for the sender
+        await getLocalMediaUri(url, path);
+      }
     } finally {
       setUploading(false);
     }
   };
+
 
   // ── Pick image ──
   const pickImage = async () => {
@@ -1567,25 +1927,64 @@ export default function ChatScreen() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, backgroundConfig.type === "color" && { backgroundColor: backgroundConfig.value }]}>
+      {backgroundConfig.type === "image" && (
+        <Image 
+          source={{ uri: backgroundConfig.value }} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
 
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
-        <View style={styles.headerAvatar}>
-          <Text style={styles.headerAvatarText}>{(name || "U").charAt(0).toUpperCase()}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerName} numberOfLines={1}>{name || "Chat"}</Text>
-          {otherUser?.is_online ? (
-            <Text style={styles.onlineText}>● Online</Text>
-          ) : (
-            <Text style={styles.offlineText}>{formatLastSeen(otherUser?.last_seen)}</Text>
-          )}
+        <TouchableOpacity 
+          style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 10 }}
+          onPress={() => setSettingsVisible(true)}
+        >
+          <View style={styles.headerAvatar}>
+            <Text style={styles.headerAvatarText}>{(name || "U").charAt(0).toUpperCase()}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerName} numberOfLines={1}>{name || "Chat"}</Text>
+            {otherUser?.is_online ? (
+              <Text style={styles.onlineText}>● Online</Text>
+            ) : (
+              <Text style={styles.offlineText}>{formatLastSeen(otherUser?.last_seen)}</Text>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {/* Call Actions */}
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerActionBtn} 
+            onPress={() => Alert.alert("Voice Call", `Starting voice call with ${name}...`)}
+          >
+            <Phone size={20} color="#2563EB" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerActionBtn} 
+            onPress={() => Alert.alert("Video Call", `Starting video call with ${name}...`)}
+          >
+            <Video size={22} color="#2563EB" />
+          </TouchableOpacity>
         </View>
       </View>
+
+      <ChatSettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        otherUser={otherUser}
+        chatSettings={chatSettings}
+        onUpdateSettings={handleUpdateSettings}
+        onUpdateMemberSettings={handleUpdateMemberSettings}
+        onClearChat={handleClearChat}
+        onBlockUser={handleBlockUser}
+      />
 
       {/* Messages */}
       <KeyboardAvoidingView
@@ -1614,27 +2013,45 @@ export default function ChatScreen() {
 
         {/* Input */}
         <View style={styles.inputArea}>
-          <TouchableOpacity style={styles.attachBtn} onPress={showAttachMenu}>
-            <Text style={styles.attachIcon}>📎</Text>
-          </TouchableOpacity>
+          {!isRecording && (
+            <TouchableOpacity style={styles.attachBtn} onPress={showAttachMenu}>
+              <Text style={styles.attachIcon}>📎</Text>
+            </TouchableOpacity>
+          )}
 
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor="#9CA3AF"
-            value={message}
-            onChangeText={setMessage}
-            multiline
-            maxLength={2000}
-          />
+          {isRecording ? (
+            <View style={styles.recordingOverlay}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>Recording {formatDuration(recordDuration)}</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              placeholderTextColor="#9CA3AF"
+              value={message}
+              onChangeText={setMessage}
+              multiline
+              maxLength={2000}
+            />
+          )}
 
-          <TouchableOpacity
-            style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
-            onPress={sendText}
-            disabled={!message.trim()}
-          >
-            <Text style={styles.sendIcon}>➤</Text>
-          </TouchableOpacity>
+          {message.trim().length === 0 ? (
+            <TouchableOpacity
+              style={[styles.sendBtn, isRecording && { backgroundColor: "#EF4444" }]}
+              onPress={isRecording ? stopRecording : startRecording}
+            >
+              {isRecording ? <StopCircle size={22} color="#FFF" /> : <Mic size={22} color="#FFF" />}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
+              onPress={sendText}
+              disabled={!message.trim()}
+            >
+              <Text style={styles.sendIcon}>➤</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -1675,6 +2092,17 @@ const styles = StyleSheet.create({
   onlineText: { fontSize: 12, color: "#22C55E", marginTop: 1 },
   offlineText: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
 
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  headerActionBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#EFF6FF",
+  },
+
   messageList: { padding: 12, paddingBottom: 8 },
 
   msgContainer: { marginVertical: 3 },
@@ -1699,6 +2127,35 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 11 },
   myTime: { color: "#BFDBFE" },
   otherTime: { color: "#9CA3AF" },
+
+  voicePlayer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: 220,
+    paddingVertical: 6,
+    gap: 10,
+  },
+  playBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  progressTrack: {
+    flex: 1,
+    height: 3,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 2,
+  },
+  progressBar: {
+    height: 3,
+    borderRadius: 2,
+  },
+  voiceTime: {
+    fontSize: 10,
+    minWidth: 30,
+  },
 
   msgImage: { width: 220, height: 160, borderRadius: 10, marginBottom: 4 },
 
@@ -1770,4 +2227,26 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: { backgroundColor: "#BFDBFE" },
   sendIcon: { color: "#FFFFFF", fontSize: 18, marginLeft: 2 },
+
+  recordingOverlay: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    height: 44,
+    gap: 8,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
+  recordingText: {
+    fontSize: 14,
+    color: "#EF4444",
+    fontWeight: "600",
+  },
 });
