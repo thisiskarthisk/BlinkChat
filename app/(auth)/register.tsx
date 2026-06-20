@@ -186,9 +186,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
-import { User, AtSign, Phone, Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft } from "lucide-react-native";
+import { User, AtSign, Phone, Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft, Building, Globe, Check } from "lucide-react-native";
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState("");
@@ -198,24 +199,64 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [accountType, setAccountType] = useState<"individual" | "company">("individual");
+  const [companyName, setCompanyName] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  const [companyBranch, setCompanyBranch] = useState("");
+  const [companyCity, setCompanyCity] = useState("");
+  const [companyState, setCompanyState] = useState("");
+  const [companyPincode, setCompanyPincode] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   const usernameRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const websiteRef = useRef<TextInput>(null);
+  const branchRef = useRef<TextInput>(null);
+  const cityRef = useRef<TextInput>(null);
+  const stateRef = useRef<TextInput>(null);
+  const pincodeRef = useRef<TextInput>(null);
 
   const signUp = async () => {
-    if (!fullName.trim() || !username.trim() || !phone.trim() || !email.trim() || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+    // 1. Agree to terms check
+    if (!agreed) {
+      Alert.alert("Terms & Conditions", "You must agree to the Terms & Conditions to register.");
       return;
+    }
+
+    // 2. Validate inputs based on account type
+    if (accountType === "individual") {
+      if (!fullName.trim() || !username.trim() || !phone.trim() || !email.trim() || !password) {
+        Alert.alert("Error", "Please fill in all fields.");
+        return;
+      }
+    } else {
+      if (
+        !companyName.trim() ||
+        !companyBranch.trim() ||
+        !companyCity.trim() ||
+        !companyState.trim() ||
+        !companyPincode.trim() ||
+        !email.trim() ||
+        !password ||
+        !companyWebsite.trim()
+      ) {
+        Alert.alert("Error", "Please enter Company Name, Branch, City, State, Pincode, Email, Password, and Website.");
+        return;
+      }
     }
 
     if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters");
+      Alert.alert("Error", "Password must be at least 6 characters.");
       return;
     }
 
-    const usernameClean = username.trim().toLowerCase().replace(/\s+/g, "_");
+    // Clean username creation
+    const usernameClean = accountType === "company"
+      ? companyName.trim().toLowerCase().replace(/[^a-z0-9]/g, "_") + "_" + Math.random().toString(36).slice(2, 6)
+      : username.trim().toLowerCase().replace(/\s+/g, "_");
 
     try {
       setLoading(true);
@@ -234,6 +275,15 @@ export default function RegisterScreen() {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
         password,
+        options: {
+          data: {
+            full_name: accountType === "company" ? companyName.trim() : fullName.trim(),
+            username: usernameClean,
+            company_name: accountType === "company" ? companyName.trim() : null,
+            is_company_admin: accountType === "company",
+            website: accountType === "company" ? companyWebsite.trim() : null,
+          }
+        }
       });
 
       if (error) {
@@ -242,15 +292,49 @@ export default function RegisterScreen() {
       }
 
       if (data.user) {
-        const { error: profileError } = await supabase.from("profiles").insert({
+        // If identities is empty, the email is already in use by another account
+        if (data.user.identities && data.user.identities.length === 0) {
+          Alert.alert("Signup Failed", "This email is already registered. Please login.");
+          return;
+        }
+
+        let assignedCompanyId: string | null = null;
+
+        if (accountType === "company") {
+          const { data: companyData, error: companyError } = await supabase
+            .from("companies")
+            .insert({
+              name: companyName.trim(),
+              branch: companyBranch.trim(),
+              city: companyCity.trim(),
+              state: companyState.trim(),
+              pincode: companyPincode.trim(),
+              website: companyWebsite.trim(),
+            })
+            .select()
+            .single();
+
+          if (companyError) {
+            Alert.alert("Company Error", companyError.message);
+            return;
+          }
+          if (companyData) {
+            assignedCompanyId = companyData.id;
+          }
+        }
+
+        const { error: profileError } = await supabase.from("profiles").upsert({
           id: data.user.id,
-          full_name: fullName.trim(),
+          full_name: accountType === "company" ? companyName.trim() : fullName.trim(),
           username: usernameClean,
-          phone: phone.trim(),
+          phone: accountType === "company" ? null : (phone.trim() || null),
           email: email.trim().toLowerCase(),
-          status: "Hey there! I am using BlinkChat",
+          status: accountType === "company" ? `Hey there! We are using BlinkChat at ${companyName}` : "Hey there! I am using BlinkChat",
           is_online: true,
           last_seen: new Date().toISOString(),
+          company_id: assignedCompanyId,
+          is_company_admin: accountType === "company",
+          is_company_account: accountType === "company",
         });
 
         if (profileError) {
@@ -296,36 +380,115 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.card}>
-          <InputField
-            icon={<User size={20} color="#94A3B8" />}
-            label="Full Name"
-            placeholder="John Doe"
-            value={fullName}
-            onChangeText={setFullName}
-            onSubmit={() => usernameRef.current?.focus()}
-          />
+          {/* Account Type Segment Selector */}
+          <View style={styles.selectorContainer}>
+            <TouchableOpacity
+              style={[styles.selectorBtn, accountType === "individual" && styles.selectorBtnActive]}
+              onPress={() => setAccountType("individual")}
+            >
+              <Text style={[styles.selectorBtnText, accountType === "individual" && styles.selectorBtnTextActive]}>
+                Individual
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectorBtn, accountType === "company" && styles.selectorBtnActive]}
+              onPress={() => setAccountType("company")}
+            >
+              <Text style={[styles.selectorBtnText, accountType === "company" && styles.selectorBtnTextActive]}>
+                Company Business
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-          <InputField
-            ref={usernameRef}
-            icon={<AtSign size={20} color="#94A3B8" />}
-            label="Username"
-            placeholder="johndoe"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            onSubmit={() => phoneRef.current?.focus()}
-          />
-
-          <InputField
-            ref={phoneRef}
-            icon={<Phone size={20} color="#94A3B8" />}
-            label="Phone Number"
-            placeholder="+1 234 567 890"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            onSubmit={() => emailRef.current?.focus()}
-          />
+          {accountType === "company" ? (
+            <>
+              <InputField
+                icon={<Building size={20} color="#94A3B8" />}
+                label="Company Name"
+                placeholder="Google Inc."
+                value={companyName}
+                onChangeText={setCompanyName}
+                onSubmit={() => branchRef.current?.focus()}
+              />
+              <InputField
+                ref={branchRef}
+                icon={<Building size={20} color="#94A3B8" />}
+                label="Company Branch"
+                placeholder="Silicon Valley"
+                value={companyBranch}
+                onChangeText={setCompanyBranch}
+                onSubmit={() => cityRef.current?.focus()}
+              />
+              <InputField
+                ref={cityRef}
+                icon={<Building size={20} color="#94A3B8" />}
+                label="City"
+                placeholder="Mountain View"
+                value={companyCity}
+                onChangeText={setCompanyCity}
+                onSubmit={() => stateRef.current?.focus()}
+              />
+              <InputField
+                ref={stateRef}
+                icon={<Building size={20} color="#94A3B8" />}
+                label="State"
+                placeholder="California"
+                value={companyState}
+                onChangeText={setCompanyState}
+                onSubmit={() => pincodeRef.current?.focus()}
+              />
+              <InputField
+                ref={pincodeRef}
+                icon={<Building size={20} color="#94A3B8" />}
+                label="Pincode"
+                placeholder="94043"
+                value={companyPincode}
+                onChangeText={setCompanyPincode}
+                onSubmit={() => websiteRef.current?.focus()}
+              />
+              <InputField
+                ref={websiteRef}
+                icon={<Globe size={20} color="#94A3B8" />}
+                label="Company Website"
+                placeholder="https://google.com"
+                value={companyWebsite}
+                onChangeText={setCompanyWebsite}
+                autoCapitalize="none"
+                onSubmit={() => emailRef.current?.focus()}
+              />
+            </>
+          ) : (
+            <>
+              <InputField
+                icon={<User size={20} color="#94A3B8" />}
+                label="Full Name"
+                placeholder="John Doe"
+                value={fullName}
+                onChangeText={setFullName}
+                onSubmit={() => usernameRef.current?.focus()}
+              />
+              <InputField
+                ref={usernameRef}
+                icon={<AtSign size={20} color="#94A3B8" />}
+                label="Username"
+                placeholder="johndoe"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                onSubmit={() => phoneRef.current?.focus()}
+              />
+              <InputField
+                ref={phoneRef}
+                icon={<Phone size={20} color="#94A3B8" />}
+                label="Phone Number"
+                placeholder="+1 234 567 890"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                onSubmit={() => emailRef.current?.focus()}
+              />
+            </>
+          )}
 
           <InputField
             ref={emailRef}
@@ -362,6 +525,23 @@ export default function RegisterScreen() {
             </View>
           </View>
 
+          {/* Terms & Conditions Checkbox */}
+          <View style={styles.termsWrapper}>
+            <TouchableOpacity
+              style={[styles.checkbox, agreed && styles.checkboxChecked]}
+              onPress={() => setAgreed(!agreed)}
+              activeOpacity={0.8}
+            >
+              {agreed && <Check size={12} color="#FFF" />}
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I agree with the{" "}
+              <Text style={styles.termsLink} onPress={() => setShowTermsModal(true)}>
+                Terms & Conditions
+              </Text>
+            </Text>
+          </View>
+
           <TouchableOpacity
             style={[styles.btn, loading && styles.btnDisabled]}
             onPress={signUp}
@@ -372,7 +552,7 @@ export default function RegisterScreen() {
             {!loading && <UserPlus size={20} color="#FFF" style={{ marginLeft: 8 }} />}
           </TouchableOpacity>
         </View>
-
+ 
         <TouchableOpacity
           style={styles.loginLink}
           onPress={() => router.replace("/(auth)/login")}
@@ -382,6 +562,40 @@ export default function RegisterScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Terms & Conditions Modal */}
+      <Modal visible={showTermsModal} transparent animationType="fade" onRequestClose={() => setShowTermsModal(false)}>
+        <View style={styles.termsModalOverlay}>
+          <View style={styles.termsModalContent}>
+            <Text style={styles.termsModalTitle}>Terms & Conditions</Text>
+            <ScrollView style={styles.termsScrollView} showsVerticalScrollIndicator={false}>
+              <Text style={styles.termsBody}>
+                Welcome to BlinkChat! By creating an account, you agree to comply with our user policies.
+                {"\n\n"}
+                1. Privacy & Protection: We respect your privacy. All media files are automatically deleted after 24 hours from the server storage, but they will be backed up on your local device for offline access.
+                {"\n\n"}
+                2. Fair Use: You agree not to distribute illegal, offensive, or malicious content through the application.
+                {"\n\n"}
+                3. Company Accounts: Company administrators are solely responsible for managing their company members and broadcast announcements.
+                {"\n\n"}
+                4. Data Management: Enabling the auto-delete policy will permanently delete all your chats and media. Please perform regular backups if you wish to keep your records.
+                {"\n\n"}
+                Thank you for using BlinkChat!
+              </Text>
+            </ScrollView>
+            
+            <TouchableOpacity
+              style={styles.termsAgreeBtn}
+              onPress={() => {
+                setAgreed(true);
+                setShowTermsModal(false);
+              }}
+            >
+              <Text style={styles.termsAgreeBtnText}>Agree & Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -545,5 +759,105 @@ const styles = StyleSheet.create({
   loginHighlight: {
     color: '#2563EB',
     fontWeight: '700',
+  },
+  selectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 24,
+  },
+  selectorBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  selectorBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  selectorBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  selectorBtnTextActive: {
+    color: '#0F172A',
+  },
+  termsWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxChecked: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  termsText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+    flex: 1,
+  },
+  termsLink: {
+    color: '#2563EB',
+    fontWeight: '700',
+  },
+  termsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  termsModalContent: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+  },
+  termsModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  termsScrollView: {
+    marginBottom: 20,
+  },
+  termsBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#334155',
+  },
+  termsAgreeBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  termsAgreeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 15,
   },
 });

@@ -1,17 +1,19 @@
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import { ThemeProvider as CustomThemeProvider, useTheme } from "@/hooks/use-theme";
+import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from "@react-navigation/native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
-import { useColorScheme } from "react-native";
+import React, { useEffect } from "react";
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootNav />
+      <CustomThemeProvider>
+        <RootNav />
+      </CustomThemeProvider>
     </AuthProvider>
   );
 }
@@ -20,7 +22,7 @@ function RootNav() {
   const { session, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const scheme = useColorScheme();
+  const { isDark } = useTheme();
 
   useEffect(() => {
     if (loading) return;
@@ -28,10 +30,8 @@ function RootNav() {
     const inAuth = segments[0] === "(auth)";
 
     if (session) {
-      // Logged in → go to app
       if (inAuth) router.replace("/(tabs)");
     } else {
-      // Not logged in → go to login
       if (!inAuth) router.replace("/(auth)/login");
     }
 
@@ -41,9 +41,9 @@ function RootNav() {
   if (loading) return null;
 
   return (
-    <ThemeProvider value={scheme === "dark" ? DarkTheme : DefaultTheme}>
-      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
+    <NavThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <Slot />
-    </ThemeProvider>
+    </NavThemeProvider>
   );
 }

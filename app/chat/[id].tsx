@@ -1,1235 +1,33 @@
-// // // // import AppHeader from "@/components/AppHeader";
-// // // // import { useAuth } from "@/hooks/useAuth";
-// // // // import {
-// // // //   getMessages,
-// // // //   sendMessage,
-// // // // } from "@/services/chatService";
-
-// // // // import { useLocalSearchParams } from "expo-router";
-
-// // // // import { useEffect, useState } from "react";
-
-// // // // import {
-// // // //   FlatList,
-// // // //   SafeAreaView,
-// // // //   StyleSheet,
-// // // //   Text,
-// // // //   TextInput,
-// // // //   TouchableOpacity,
-// // // //   View,
-// // // // } from "react-native";
-
-// // // // export default function ChatScreen() {
-// // // //   const { id, name } =
-// // // //     useLocalSearchParams();
-
-// // // //   const { user } = useAuth();
-
-// // // //   const [message, setMessage] =
-// // // //     useState("");
-
-// // // //   const [messages, setMessages] =
-// // // //     useState<any[]>([]);
-
-// // // //   useEffect(() => {
-// // // //     loadMessages();
-// // // //   }, []);
-
-// // // //   const loadMessages = async () => {
-// // // //     const data =
-// // // //       await getMessages(
-// // // //         String(id)
-// // // //       );
-
-// // // //     setMessages(data);
-// // // //   };
-
-// // // //   const handleSend =
-// // // //     async () => {
-// // // //       if (!message.trim())
-// // // //         return;
-
-// // // //       await sendMessage(
-// // // //         String(id),
-// // // //         user?.id || "",
-// // // //         message
-// // // //       );
-
-// // // //       setMessage("");
-
-// // // //       loadMessages();
-// // // //     };
-
-// // // //   const renderItem = ({
-// // // //     item,
-// // // //   }: any) => {
-// // // //     const mine =
-// // // //       item.sender_id ===
-// // // //       user?.id;
-
-// // // //     return (
-// // // //       <View
-// // // //         style={[
-// // // //           styles.message,
-// // // //           mine
-// // // //             ? styles.myMessage
-// // // //             : styles.otherMessage,
-// // // //         ]}
-// // // //       >
-// // // //         <Text>
-// // // //           {item.message}
-// // // //         </Text>
-// // // //       </View>
-// // // //     );
-// // // //   };
-
-// // // //   return (
-// // // //     <SafeAreaView
-// // // //       style={styles.container}
-// // // //     >
-// // // //       <AppHeader
-// // // //         title={String(name)}
-// // // //       />
-
-// // // //       <FlatList
-// // // //         data={messages}
-// // // //         keyExtractor={(item) =>
-// // // //           item.id
-// // // //         }
-// // // //         renderItem={renderItem}
-// // // //         contentContainerStyle={{
-// // // //           padding: 10,
-// // // //         }}
-// // // //       />
-
-// // // //       <View
-// // // //         style={styles.inputRow}
-// // // //       >
-// // // //         <TextInput
-// // // //           style={styles.input}
-// // // //           value={message}
-// // // //           onChangeText={
-// // // //             setMessage
-// // // //           }
-// // // //           placeholder="Type message..."
-// // // //         />
-
-// // // //         <TouchableOpacity
-// // // //           style={styles.sendBtn}
-// // // //           onPress={
-// // // //             handleSend
-// // // //           }
-// // // //         >
-// // // //           <Text
-// // // //             style={{
-// // // //               color: "#fff",
-// // // //             }}
-// // // //           >
-// // // //             Send
-// // // //           </Text>
-// // // //         </TouchableOpacity>
-// // // //       </View>
-// // // //     </SafeAreaView>
-// // // //   );
-// // // // }
-
-// // // // const styles =
-// // // //   StyleSheet.create({
-// // // //     container: {
-// // // //       flex: 1,
-// // // //       backgroundColor:
-// // // //         "#F8FAFC",
-// // // //     },
-
-// // // //     message: {
-// // // //       maxWidth: "80%",
-// // // //       padding: 10,
-// // // //       marginVertical: 5,
-// // // //       borderRadius: 10,
-// // // //     },
-
-// // // //     myMessage: {
-// // // //       backgroundColor:
-// // // //         "#DBEAFE",
-// // // //       alignSelf: "flex-end",
-// // // //     },
-
-// // // //     otherMessage: {
-// // // //       backgroundColor:
-// // // //         "#FFFFFF",
-// // // //       alignSelf: "flex-start",
-// // // //     },
-
-// // // //     inputRow: {
-// // // //       flexDirection: "row",
-// // // //       padding: 10,
-// // // //       borderTopWidth: 1,
-// // // //       borderColor: "#ddd",
-// // // //       backgroundColor:
-// // // //         "#fff",
-// // // //     },
-
-// // // //     input: {
-// // // //       flex: 1,
-// // // //       borderWidth: 1,
-// // // //       borderColor: "#ddd",
-// // // //       borderRadius: 20,
-// // // //       paddingHorizontal: 15,
-// // // //     },
-
-// // // //     sendBtn: {
-// // // //       marginLeft: 10,
-// // // //       backgroundColor:
-// // // //         "#2563EB",
-// // // //       justifyContent:
-// // // //         "center",
-// // // //       paddingHorizontal: 20,
-// // // //       borderRadius: 20,
-// // // //     },
-// // // //   });
-
-
-// // // import AppHeader from "@/components/AppHeader";
-// // // import { useAuth } from "@/hooks/useAuth";
-// // // import { supabase } from "@/lib/supabase";
-// // // import {
-// // //   getMessages,
-// // //   sendMessage,
-// // //   subscribeToMessages,
-// // //   unsubscribeMessages,
-// // // } from "@/services/chatService";
-
-// // // import { useLocalSearchParams } from "expo-router";
-
-// // // import { useEffect, useState } from "react";
-
-// // // import {
-// // //   FlatList,
-// // //   KeyboardAvoidingView,
-// // //   Platform,
-// // //   SafeAreaView,
-// // //   StyleSheet,
-// // //   Text,
-// // //   TextInput,
-// // //   TouchableOpacity,
-// // //   View,
-// // // } from "react-native";
-
-// // // export default function ChatScreen() {
-// // //   const { id, name } =
-// // //     useLocalSearchParams();
-
-// // //   const { user } = useAuth();
-
-// // //   const [message, setMessage] =
-// // //     useState("");
-
-// // //   const [messages, setMessages] =
-// // //     useState<any[]>([]);
-
-// // //   const markMessagesSeen =
-// // //     async () => {
-
-// // //     await supabase
-// // //     .from("messages")
-// // //     .update({
-// // //       is_seen:true
-// // //     })
-// // //     .eq("chat_id", id)
-// // //     .neq("sender_id", user?.id);
-
-// // //   };
-
-// // //   useEffect(() => {
-// // //     loadMessages();
-// // //     markMessagesSeen();
-
-
-// // //     const channel =
-// // //       subscribeToMessages(() => {
-// // //         loadMessages();
-// // //       });
-
-// // //     return () => {
-// // //       unsubscribeMessages(channel);
-// // //     };
-// // //   }, []);
-
-// // //   const loadMessages =
-// // //     async () => {
-// // //       const data =
-// // //         await getMessages(
-// // //           String(id)
-// // //         );
-
-// // //       setMessages(data);
-// // //     };
-
-// // //   const handleSend =
-// // //     async () => {
-// // //       if (!message.trim())
-// // //         return;
-
-// // //       await sendMessage(
-// // //         String(id),
-// // //         user?.id || "",
-// // //         message
-// // //       );
-
-// // //       setMessage("");
-// // //     };
-
-// // //   const renderMessage = ({
-// // //     item,
-// // //   }: any) => {
-// // //     const isMine =
-// // //       item.sender_id ===
-// // //       user?.id;
-
-// // //     return (
-// // //       <View
-// // //         style={[
-// // //           styles.messageContainer,
-// // //           isMine
-// // //             ? styles.myContainer
-// // //             : styles.otherContainer,
-// // //         ]}
-// // //       >
-// // //         <View
-// // //           style={[
-// // //             styles.bubble,
-// // //             isMine
-// // //               ? styles.myBubble
-// // //               : styles.otherBubble,
-// // //           ]}
-// // //         >
-// // //           <Text
-// // //             style={
-// // //               styles.messageText
-// // //             }
-// // //           >
-// // //             {item.message}
-// // //           </Text>
-// // //         </View>
-// // //       </View>
-// // //     );
-// // //   };
-
-// // //   return (
-// // //     <SafeAreaView
-// // //       style={styles.container}
-// // //     >
-// // //       <AppHeader
-// // //         title={
-// // //           String(name) ||
-// // //           "Chat"
-// // //         }
-// // //       />
-
-// // //       <KeyboardAvoidingView
-// // //         style={{
-// // //           flex: 1,
-// // //         }}
-// // //         behavior={
-// // //           Platform.OS ===
-// // //           "ios"
-// // //             ? "padding"
-// // //             : undefined
-// // //         }
-// // //       >
-// // //         <FlatList
-// // //           data={messages}
-// // //           keyExtractor={(item) =>
-// // //             item.id
-// // //           }
-// // //           renderItem={
-// // //             renderMessage
-// // //           }
-// // //           contentContainerStyle={{
-// // //             padding: 10,
-// // //           }}
-// // //         />
-
-// // //         <View
-// // //           style={
-// // //             styles.inputContainer
-// // //           }
-// // //         >
-// // //           <TextInput
-// // //             value={message}
-// // //             onChangeText={
-// // //               setMessage
-// // //             }
-// // //             placeholder="Type a message..."
-// // //             style={styles.input}
-// // //           />
-
-// // //           <TouchableOpacity
-// // //             style={
-// // //               styles.sendButton
-// // //             }
-// // //             onPress={
-// // //               handleSend
-// // //             }
-// // //           >
-// // //             <Text
-// // //               style={
-// // //                 styles.sendText
-// // //               }
-// // //             >
-// // //               Send
-// // //             </Text>
-// // //           </TouchableOpacity>
-// // //         </View>
-// // //       </KeyboardAvoidingView>
-// // //     </SafeAreaView>
-// // //   );
-// // // }
-
-// // // const styles =
-// // //   StyleSheet.create({
-// // //     container: {
-// // //       flex: 1,
-// // //       backgroundColor:
-// // //         "#F8FAFC",
-// // //     },
-
-// // //     messageContainer: {
-// // //       marginVertical: 4,
-// // //     },
-
-// // //     myContainer: {
-// // //       alignItems: "flex-end",
-// // //     },
-
-// // //     otherContainer: {
-// // //       alignItems: "flex-start",
-// // //     },
-
-// // //     bubble: {
-// // //       maxWidth: "80%",
-// // //       padding: 12,
-// // //       borderRadius: 15,
-// // //     },
-
-// // //     myBubble: {
-// // //       backgroundColor:
-// // //         "#2563EB",
-// // //     },
-
-// // //     otherBubble: {
-// // //       backgroundColor:
-// // //         "#FFFFFF",
-// // //       borderWidth: 1,
-// // //       borderColor:
-// // //         "#E5E7EB",
-// // //     },
-
-// // //     messageText: {
-// // //       color: "#111827",
-// // //     },
-
-// // //     inputContainer: {
-// // //       flexDirection: "row",
-// // //       padding: 10,
-// // //       backgroundColor:
-// // //         "#FFFFFF",
-// // //       borderTopWidth: 1,
-// // //       borderColor:
-// // //         "#E5E7EB",
-// // //     },
-
-// // //     input: {
-// // //       flex: 1,
-// // //       backgroundColor:
-// // //         "#F3F4F6",
-// // //       borderRadius: 25,
-// // //       paddingHorizontal: 15,
-// // //       paddingVertical: 12,
-// // //     },
-
-// // //     sendButton: {
-// // //       backgroundColor:
-// // //         "#2563EB",
-
-// // //       marginLeft: 10,
-
-// // //       borderRadius: 25,
-
-// // //       paddingHorizontal: 20,
-
-// // //       justifyContent:
-// // //         "center",
-// // //     },
-
-// // //     sendText: {
-// // //       color: "#FFFFFF",
-// // //       fontWeight: "bold",
-// // //     },
-// // //   });
-
-
-// // import AppHeader from "@/components/AppHeader";
-// // import { useAuth } from "@/hooks/useAuth";
-// // import { supabase } from "@/lib/supabase";
-// // import { useLocalSearchParams } from "expo-router";
-// // import { useEffect, useState } from "react";
-
-// // import {
-// //   FlatList,
-// //   KeyboardAvoidingView,
-// //   Platform,
-// //   StyleSheet,
-// //   Text,
-// //   TextInput,
-// //   TouchableOpacity,
-// //   View,
-// // } from "react-native";
-
-// // export default function ChatScreen() {
-// //   const { id, name } = useLocalSearchParams();
-
-// //   const { user } = useAuth();
-
-// //   const [message, setMessage] = useState("");
-// //   const [messages, setMessages] = useState<any[]>([]);
-
-// //   useEffect(() => {
-// //     loadMessages();
-// //     markMessagesSeen();
-
-// //     const channel = supabase
-// //       .channel(`chat-${id}`)
-// //       .on(
-// //         "postgres_changes",
-// //         {
-// //           event: "*",
-// //           schema: "public",
-// //           table: "messages",
-// //         },
-// //         () => {
-// //           loadMessages();
-// //           markMessagesSeen();
-// //         }
-// //       )
-// //       .subscribe();
-
-// //     return () => {
-// //       supabase.removeChannel(channel);
-// //     };
-// //   }, []);
-
-// //   const markMessagesSeen = async () => {
-// //     if (!user?.id) return;
-
-// //     await supabase
-// //       .from("messages")
-// //       .update({
-// //         is_seen: true,
-// //       })
-// //       .eq("chat_id", id)
-// //       .neq("sender_id", user.id);
-// //   };
-
-// //   const loadMessages = async () => {
-// //     const { data, error } = await supabase
-// //       .from("messages")
-// //       .select("*")
-// //       .eq("chat_id", id)
-// //       .order("created_at", {
-// //         ascending: true,
-// //       });
-
-// //     if (error) {
-// //       console.log(error);
-// //       return;
-// //     }
-
-// //     setMessages(data || []);
-// //   };
-
-// //   const sendMessage = async () => {
-// //     if (!message.trim()) return;
-
-// //     const { error } = await supabase
-// //       .from("messages")
-// //       .insert({
-// //         chat_id: id,
-// //         sender_id: user?.id,
-// //         message: message.trim(),
-// //         is_seen: false,
-// //       });
-
-// //     if (error) {
-// //       console.log(error);
-// //       return;
-// //     }
-
-// //     setMessage("");
-// //   };
-
-// //   const renderMessage = ({ item }: any) => {
-// //     const isMine =
-// //       item.sender_id === user?.id;
-
-// //     return (
-// //       <View
-// //         style={[
-// //           styles.messageContainer,
-// //           isMine
-// //             ? styles.myContainer
-// //             : styles.otherContainer,
-// //         ]}
-// //       >
-// //         <View
-// //           style={[
-// //             styles.bubble,
-// //             isMine
-// //               ? styles.myBubble
-// //               : styles.otherBubble,
-// //           ]}
-// //         >
-// //           <Text
-// //             style={[
-// //               styles.messageText,
-// //               {
-// //                 color: isMine
-// //                   ? "#FFFFFF"
-// //                   : "#111827",
-// //               },
-// //             ]}
-// //           >
-// //             {item.message}
-// //           </Text>
-
-// //           <Text
-// //             style={[
-// //               styles.messageTime,
-// //               {
-// //                 color: isMine
-// //                   ? "#E5E7EB"
-// //                   : "#6B7280",
-// //               },
-// //             ]}
-// //           >
-// //             {new Date(
-// //               item.created_at
-// //             ).toLocaleTimeString(
-// //               "en-IN",
-// //               {
-// //                 hour: "2-digit",
-// //                 minute: "2-digit",
-// //                 hour12: true,
-// //               }
-// //             )}
-// //           </Text>
-// //         </View>
-// //       </View>
-// //     );
-// //   };
-
-// //   return (
-// //     <View style={styles.container}>
-// //       <AppHeader
-// //         title={String(name || "Chat")}
-// //       />
-
-// //       <KeyboardAvoidingView
-// //         style={{ flex: 1 }}
-// //         behavior={
-// //           Platform.OS === "ios"
-// //             ? "padding"
-// //             : undefined
-// //         }
-// //       >
-// //         <FlatList
-// //           data={messages}
-// //           keyExtractor={(item) =>
-// //             item.id
-// //           }
-// //           renderItem={renderMessage}
-// //           contentContainerStyle={{
-// //             padding: 10,
-// //           }}
-// //         />
-
-// //         <View style={styles.inputArea}>
-// //           <TextInput
-// //             placeholder="Type a message..."
-// //             value={message}
-// //             onChangeText={setMessage}
-// //             style={styles.input}
-// //           />
-
-// //           <TouchableOpacity
-// //             style={styles.sendBtn}
-// //             onPress={sendMessage}
-// //           >
-// //             <Text
-// //               style={styles.sendText}
-// //             >
-// //               Send
-// //             </Text>
-// //           </TouchableOpacity>
-// //         </View>
-// //       </KeyboardAvoidingView>
-// //     </View>
-// //   );
-// // }
-
-// // const styles = StyleSheet.create({
-// //   container: {
-// //     flex: 1,
-// //     backgroundColor: "#F8FAFC",
-// //   },
-
-// //   messageContainer: {
-// //     marginVertical: 4,
-// //   },
-
-// //   myContainer: {
-// //     alignItems: "flex-end",
-// //   },
-
-// //   otherContainer: {
-// //     alignItems: "flex-start",
-// //   },
-
-// //   bubble: {
-// //     maxWidth: "80%",
-// //     padding: 12,
-// //     borderRadius: 14,
-// //   },
-
-// //   myBubble: {
-// //     backgroundColor: "#2563EB",
-// //   },
-
-// //   otherBubble: {
-// //     backgroundColor: "#FFFFFF",
-// //     borderWidth: 1,
-// //     borderColor: "#E5E7EB",
-// //   },
-
-// //   messageText: {
-// //     fontSize: 15,
-// //   },
-
-// //   messageTime: {
-// //     fontSize: 11,
-// //     marginTop: 5,
-// //     textAlign: "right",
-// //   },
-
-// //   inputArea: {
-// //     flexDirection: "row",
-// //     padding: 10,
-// //     backgroundColor: "#FFFFFF",
-// //     borderTopWidth: 1,
-// //     borderColor: "#E5E7EB",
-// //   },
-
-// //   input: {
-// //     flex: 1,
-// //     backgroundColor: "#F3F4F6",
-// //     borderRadius: 25,
-// //     paddingHorizontal: 15,
-// //     paddingVertical: 12,
-// //   },
-
-// //   sendBtn: {
-// //     backgroundColor: "#2563EB",
-// //     marginLeft: 10,
-// //     borderRadius: 25,
-// //     justifyContent: "center",
-// //     paddingHorizontal: 20,
-// //   },
-
-// //   sendText: {
-// //     color: "#FFFFFF",
-// //     fontWeight: "bold",
-// //   },
-// // });
-
-
-// import AppHeader from "@/components/AppHeader";
-// import { useAuth } from "@/hooks/useAuth";
-// import { supabase } from "@/lib/supabase";
-// import { useLocalSearchParams } from "expo-router";
-// import React, { useEffect, useRef, useState } from "react";
-
-// import {
-//   FlatList,
-//   KeyboardAvoidingView,
-//   Platform,
-//   StyleSheet,
-//   Text,
-//   TextInput,
-//   TouchableOpacity,
-//   View,
-// } from "react-native";
-
-// export default function ChatScreen() {
-//   const { id, name } = useLocalSearchParams();
-//   const { user } = useAuth();
-
-//   const [message, setMessage] = useState("");
-//   const [messages, setMessages] = useState<any[]>([]);
-//   const [otherUser, setOtherUser] = useState<any>(null);
-
-//   const flatListRef = useRef<FlatList>(null);
-
-//   useEffect(() => {
-//     loadMessages();
-//     markMessagesSeen();
-//     getOtherUser();
-
-//     // Message subscription
-//     const msgChannel = supabase
-//       .channel(`chat-messages-${id}`)
-//       .on(
-//         "postgres_changes",
-//         {
-//           event: "*",
-//           schema: "public",
-//           table: "messages",
-//           filter: `chat_id=eq.${id}`,
-//         },
-//         (payload) => {
-//           if (payload.eventType === "INSERT") {
-//             setMessages((prev) => {
-//               const exists = prev.find((m) => m.id === payload.new.id);
-//               if (exists) return prev;
-              
-//               if (payload.new.sender_id !== user?.id) {
-//                 markMessagesSeen();
-//               }
-              
-//               return [...prev, payload.new];
-//             });
-//             scrollBottom();
-//           } else if (payload.eventType === "UPDATE") {
-//             setMessages((prev) =>
-//               prev.map((m) =>
-//                 m.id === payload.new.id ? payload.new : m
-//               )
-//             );
-//           }
-//         }
-//       )
-//       .subscribe();
-
-//     // Profile subscription for online status
-//     const profileChannel = supabase
-//       .channel(`chat-profile-${id}`)
-//       .on(
-//         "postgres_changes",
-//         {
-//           event: "UPDATE",
-//           schema: "public",
-//           table: "profiles",
-//         },
-//         (payload) => {
-//           setOtherUser((current: any) => {
-//             if (current && payload.new.id === current.id) {
-//               return payload.new;
-//             }
-//             return current;
-//           });
-//         }
-//       )
-//       .subscribe();
-
-//     return () => {
-//       supabase.removeChannel(msgChannel);
-//       supabase.removeChannel(profileChannel);
-//     };
-//   }, [id, user?.id]);
-
-//   const getOtherUser = async () => {
-//     const { data: member } = await supabase
-//       .from("chat_members")
-//       .select("user_id")
-//       .eq("chat_id", id)
-//       .neq("user_id", user?.id)
-//       .maybeSingle();
-
-//     if (member) {
-//       const { data: profile } = await supabase
-//         .from("profiles")
-//         .select("*")
-//         .eq("id", member.user_id)
-//         .maybeSingle();
-      
-//       if (profile) setOtherUser(profile);
-//     }
-//   };
-
-//   const scrollBottom = () => {
-//     setTimeout(() => {
-//       flatListRef.current?.scrollToEnd({
-//         animated: true,
-//       });
-//     }, 100);
-//   };
-
-//   const markMessagesSeen = async () => {
-//     if (!user?.id || !id) return;
-
-//     await supabase
-//       .from("messages")
-//       .update({
-//         is_seen: true,
-//       })
-//       .eq("chat_id", id)
-//       .neq("sender_id", user.id)
-//       .eq("is_seen", false);
-//   };
-
-
-//   const loadMessages = async () => {
-//     const { data, error } = await supabase
-//       .from("messages")
-//       .select("*")
-//       .eq("chat_id", id)
-//       .order("created_at", {
-//         ascending: true,
-//       });
-
-//     if (error) {
-//       console.log(error);
-//       return;
-//     }
-
-//     setMessages(data || []);
-//     scrollBottom();
-//   };
-
-//   const sendMessage = async () => {
-//     if (!message.trim() || !user?.id) return;
-
-//     const text = message.trim();
-//     const tempId = Date.now().toString();
-
-//     const tempMessage = {
-//       id: tempId,
-//       chat_id: id,
-//       sender_id: user.id,
-//       message: text,
-//       created_at: new Date().toISOString(),
-//       is_seen: false,
-//       is_delivered: true,
-//     };
-
-//     setMessages((prev) => [...prev, tempMessage]);
-//     setMessage("");
-//     scrollBottom();
-
-//     const { data, error } = await supabase
-//       .from("messages")
-//       .insert({
-//         chat_id: id,
-//         sender_id: user.id,
-//         message: text,
-//         is_seen: false,
-//         is_delivered: true,
-//       })
-//       .select()
-//       .single();
-
-//     if (error) {
-//       console.log(error);
-//       setMessages((prev) => prev.filter(m => m.id !== tempId));
-//     } else if (data) {
-//       setMessages((prev) => 
-//         prev.map(m => m.id === tempId ? data : m)
-//       );
-//     }
-//   };
-
-//   const renderMessage = ({ item }: any) => {
-//     const isMine =
-//       item.sender_id === user?.id;
-
-//     return (
-//       <View
-//         style={[
-//           styles.messageContainer,
-//           isMine
-//             ? styles.myContainer
-//             : styles.otherContainer,
-//         ]}
-//       >
-//         <View
-//           style={[
-//             styles.bubble,
-//             isMine
-//               ? styles.myBubble
-//               : styles.otherBubble,
-//           ]}
-//         >
-//           <Text
-//             style={[
-//               styles.messageText,
-//               {
-//                 color: "#111827",
-//               },
-//             ]}
-//           >
-//             {item.message}
-//           </Text>
-
-//           <View
-//             style={{
-//               flexDirection: "row",
-//               justifyContent: "flex-end",
-//               alignItems: "center",
-//               marginTop: 4,
-//             }}
-//           >
-//             <Text
-//               style={[
-//                 styles.timeText,
-//                 {
-//                   color: "#6B7280",
-//                 },
-//               ]}
-//             >
-//               {new Date(
-//                 item.created_at
-//               ).toLocaleTimeString(
-//                 "en-IN",
-//                 {
-//                   hour: "2-digit",
-//                   minute: "2-digit",
-//                   hour12: true,
-//                 }
-//               )}
-//             </Text>
-
-//             {isMine && (
-//               <Text
-//                 style={{
-//                   marginLeft: 5,
-//                   fontSize: 11,
-//                   color: item.is_seen
-//                     ? "#3B82F6"
-//                     : "#9CA3AF",
-//                 }}
-//               >
-//                 {item.is_seen
-//                   ? "✓✓"
-//                   : "✓✓"}
-//               </Text>
-//             )}
-//           </View>
-//         </View>
-//       </View>
-//     );
-//   };
-
-//   return (
-//     <View style={styles.container}>
-//       <View style={styles.customHeader}>
-//         <TouchableOpacity onPress={() => router.back()}>
-//           <Text style={styles.backBtn}>←</Text>
-//         </TouchableOpacity>
-//         <View style={styles.headerInfo}>
-//           <Text style={styles.headerName}>{String(name)}</Text>
-//           {otherUser?.is_online ? (
-//             <Text style={styles.onlineText}>● Online</Text>
-//           ) : (
-//             <Text style={styles.offlineText}>
-//               {otherUser?.last_seen 
-//                 ? `Last seen ${new Date(otherUser.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-//                 : "Offline"}
-//             </Text>
-//           )}
-//         </View>
-//       </View>
-
-//       <KeyboardAvoidingView
-//         style={{ flex: 1 }}
-//         behavior={
-//           Platform.OS === "ios"
-//             ? "padding"
-//             : undefined
-//         }
-//       >
-//         <FlatList
-//           ref={flatListRef}
-//           data={messages}
-//           keyExtractor={(item) =>
-//             item.id.toString()
-//           }
-//           renderItem={renderMessage}
-//           contentContainerStyle={{
-//             padding: 10,
-//           }}
-//           onContentSizeChange={() => scrollBottom()}
-//           onLayout={() => scrollBottom()}
-//         />
-
-//         <View style={styles.inputArea}>
-//           <TextInput
-//             style={styles.input}
-//             value={message}
-//             onChangeText={setMessage}
-//             placeholder="Type message..."
-//           />
-
-//           <TouchableOpacity
-//             style={styles.sendBtn}
-//             onPress={sendMessage}
-//           >
-//             <Text
-//               style={styles.sendText}
-//             >
-//               Send
-//             </Text>
-//           </TouchableOpacity>
-//         </View>
-//       </KeyboardAvoidingView>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: "#F8FAFC",
-//   },
-
-//   messageContainer: {
-//     marginVertical: 4,
-//   },
-
-//   myContainer: {
-//     alignItems: "flex-end",
-//   },
-
-//   otherContainer: {
-//     alignItems: "flex-start",
-//   },
-
-//   bubble: {
-//     maxWidth: "80%",
-//     padding: 12,
-//     borderRadius: 14,
-//   },
-
-//   myBubble: {
-//     backgroundColor: "#ffffff",
-//   },
-
-//   otherBubble: {
-//     backgroundColor: "#FFFFFF",
-//     borderWidth: 1,
-//     borderColor: "#E5E7EB",
-//   },
-
-//   messageText: {
-//     fontSize: 15,
-//   },
-
-//   timeText: {
-//     fontSize: 11,
-//   },
-
-//   inputArea: {
-//     flexDirection: "row",
-//     padding: 10,
-//     backgroundColor: "#FFFFFF",
-//     borderTopWidth: 1,
-//     borderColor: "#E5E7EB",
-//   },
-
-//   input: {
-//     flex: 1,
-//     backgroundColor: "#F3F4F6",
-//     borderRadius: 25,
-//     paddingHorizontal: 15,
-//     paddingVertical: 12,
-//   },
-
-//   sendBtn: {
-//     backgroundColor: "#2563EB",
-//     marginLeft: 10,
-//     borderRadius: 25,
-//     justifyContent: "center",
-//     paddingHorizontal: 20,
-//   },
-
-//   sendText: {
-//     color: "#FFFFFF",
-//     fontWeight: "bold",
-//   },
-//   customHeader: {
-//     flexDirection: "row",
-//     alignItems: "center",
-//     padding: 15,
-//     paddingTop: 50,
-//     backgroundColor: "#FFFFFF",
-//     borderBottomWidth: 1,
-//     borderBottomColor: "#E5E7EB",
-//   },
-//   backBtn: {
-//     fontSize: 24,
-//     color: "#2563EB",
-//     marginRight: 15,
-//     fontWeight: "bold",
-//   },
-//   headerInfo: {
-//     flex: 1,
-//   },
-//   headerName: {
-//     fontSize: 18,
-//     fontWeight: "bold",
-//     color: "#111827",
-//   },
-//   onlineText: {
-//     fontSize: 12,
-//     color: "#22C55E",
-//     marginTop: 2,
-//   },
-//   offlineText: {
-//     fontSize: 12,
-//     color: "#9CA3AF",
-//     marginTop: 2,
-//   },
-// });
-
-
-
-
-/**
- * app/chat/[id].tsx
- *
- * Works in Expo Go — no native modules.
- * - Real-time messages (Supabase Realtime)
- * - Optimistic UI (instant send)
- * - Image, video (limited to 60s via picker), file sending
- * - Double tick: grey = delivered, blue = seen
- * - Online status / last seen in header
- */
-
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Audio } from "expo-av";
+import Slider from "@react-native-community/slider";
+import { Audio, ResizeMode, Video } from "expo-av";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
+import * as Sharing from "expo-sharing";
 import { router, useLocalSearchParams } from "expo-router";
-import { Mic, Pause, Phone, Play, StopCircle, Video } from "lucide-react-native";
+import {
+  Download,
+  ExternalLink,
+  Mic,
+  Pause,
+  Phone,
+  Play,
+  StopCircle,
+  X
+} from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -1245,6 +43,9 @@ import {
   updateMemberSettings
 } from "../../services/chatService";
 import { blockUser } from "../../services/friendService";
+import { getCachedMessages, saveCachedMessages } from "../../services/storageService";
+import { sendPushForMessage } from "../../services/pushNotificationService";
+
 
 // ─── Local Caching ──────────────────────────────────────────
 
@@ -1258,19 +59,22 @@ async function ensureMediaDir() {
 }
 
 async function getLocalMediaUri(remoteUrl: string, mediaPath: string) {
+  if (Platform.OS === "web") {
+    return remoteUrl;
+  }
   if (!mediaPath) return remoteUrl;
-  await ensureMediaDir();
-  const fileName = mediaPath.split("/").pop();
-  const localUri = `${CHAT_MEDIA_DIR}${fileName}`;
-  
-  const fileInfo = await FileSystem.getInfoAsync(localUri);
-  if (fileInfo.exists) return localUri;
-  
   try {
+    await ensureMediaDir();
+    const fileName = mediaPath.split("/").pop();
+    const localUri = `${CHAT_MEDIA_DIR}${fileName}`;
+    
+    const fileInfo = await FileSystem.getInfoAsync(localUri);
+    if (fileInfo.exists) return localUri;
+    
     const { uri } = await FileSystem.downloadAsync(remoteUrl, localUri);
     return uri;
   } catch (e) {
-    console.log("Download error:", e);
+    console.log("getLocalMediaUri error, falling back to remoteUrl:", e);
     return remoteUrl;
   }
 }
@@ -1321,18 +125,78 @@ function TickIcon({ isSeen, isDelivered }: { isSeen: boolean; isDelivered: boole
 
 // ─── Upload to Supabase Storage ──────────────────────────────
 
+// Helper to convert Base64 string to ArrayBuffer (for mobile uploads)
+const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const str = base64.replace(/=+$/, "");
+  const len = str.length;
+  const bufferLength = Math.floor(len * 0.75);
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const bytes = new Uint8Array(arrayBuffer);
+  
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const encoded1 = base64Chars.indexOf(str[i]);
+    const encoded2 = base64Chars.indexOf(str[i + 1]);
+    const encoded3 = i + 2 < len ? base64Chars.indexOf(str[i + 2]) : 0;
+    const encoded4 = i + 3 < len ? base64Chars.indexOf(str[i + 3]) : 0;
+    
+    const bytes1 = (encoded1 << 2) | (encoded2 >> 4);
+    const bytes2 = ((encoded2 & 15) << 4) | (encoded3 >> 2);
+    const bytes3 = ((encoded3 & 3) << 6) | encoded4;
+    
+    bytes[p++] = bytes1;
+    if (i + 2 < len) bytes[p++] = bytes2;
+    if (i + 3 < len) bytes[p++] = bytes3;
+  }
+  return arrayBuffer;
+}
+
 async function uploadToStorage(
   uri: string,
   mimeType: string,
   folder: string
 ): Promise<{ url: string; path: string } | null> {
   try {
-    const ext = uri.split(".").pop()?.split("?")[0] || "bin";
+    let ext = "bin";
+    if (mimeType.includes("image/jpeg") || mimeType.includes("image/jpg")) {
+      ext = "jpg";
+    } else if (mimeType.includes("image/png")) {
+      ext = "png";
+    } else if (mimeType.includes("image/gif")) {
+      ext = "gif";
+    } else if (mimeType.includes("video/mp4")) {
+      ext = "mp4";
+    } else if (mimeType.includes("audio/mp4") || mimeType.includes("audio/m4a")) {
+      ext = "m4a";
+    } else if (mimeType.includes("audio/webm")) {
+      ext = "webm";
+    } else if (mimeType.includes("audio/ogg")) {
+      ext = "ogg";
+    } else if (mimeType.includes("audio/wav") || mimeType.includes("audio/x-wav")) {
+      ext = "wav";
+    } else {
+      const parts = uri.split(".");
+      const candidate = parts[parts.length - 1]?.split("?")[0] || "";
+      if (candidate && /^[a-zA-Z0-9]{2,5}$/.test(candidate)) {
+        ext = candidate;
+      }
+    }
     const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const arrayBuffer = await new Response(blob).arrayBuffer();
+    let arrayBuffer: ArrayBuffer;
+
+    if (Platform.OS === "web") {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      arrayBuffer = await new Response(blob).arrayBuffer();
+    } else {
+      // Read local file as Base64 on mobile platforms
+      const base64Data = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      arrayBuffer = base64ToArrayBuffer(base64Data);
+    }
 
     const { error } = await supabase.storage
       .from("chat-media")
@@ -1351,81 +215,231 @@ async function uploadToStorage(
   }
 }
 
-// ─── Message Bubble ──────────────────────────────────────────
-
-// ─── Message Bubble ──────────────────────────────────────────
-
-function VoiceMessagePlayer({ uri, isMine }: { uri: string; isMine: boolean }) {
+// ─── Message Bubble ─────────────────────────────────────────
+function VoiceMessagePlayer({
+  uri,
+  isMine,
+}: {
+  uri: string;
+  isMine: boolean;
+}) {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const isSliding = useRef(false);
 
-  const formatDur = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  useEffect(() => {
+    soundRef.current = sound;
+  }, [sound]);
+
+  const formatTime = (millis: number) => {
+    const sec = Math.floor(millis / 1000);
+    const min = Math.floor(sec / 60);
+    const rem = sec % 60;
+    return `${min}:${String(rem).padStart(2, "0")}`;
   };
 
-  async function playSound() {
+  const playbackUpdate = useCallback(async (status: any) => {
+    if (!status.isLoaded) return;
+
+    if (status.didJustFinish) {
+      setIsPlaying(false);
+      setPosition(0);
+      if (soundRef.current) {
+        await soundRef.current.setPositionAsync(0);
+      }
+    } else {
+      if (!isSliding.current) {
+        setPosition(status.positionMillis);
+      }
+      setDuration(status.durationMillis || 0);
+      setIsPlaying(status.isPlaying);
+    }
+  }, []);
+
+  const playPause = async () => {
     try {
-      if (sound) {
-        await sound.playAsync();
-        setIsPlaying(true);
-      } else {
+      if (!sound) {
         const { sound: newSound } = await Audio.Sound.createAsync(
           { uri },
-          { shouldPlay: true },
-          onPlaybackStatusUpdate
+          {
+            shouldPlay: true,
+            rate: speed,
+            shouldCorrectPitch: true,
+          },
+          playbackUpdate
         );
+        soundRef.current = newSound;
         setSound(newSound);
+        setIsPlaying(true);
+        return;
+      }
+
+      const status = await sound.getStatusAsync();
+      if (!status.isLoaded) return;
+
+      if (isPlaying) {
+        await sound.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        // If it was finished, restart from 0
+        if (status.positionMillis >= (status.durationMillis || 0)) {
+          await sound.playFromPositionAsync(0);
+        } else {
+          await sound.playAsync();
+        }
         setIsPlaying(true);
       }
     } catch (e) {
-      console.log("Play sound error:", e);
+      console.log("playPause error:", e);
     }
-  }
+  };
 
-  async function pauseSound() {
+  const seekAudio = async (value: number) => {
+    if (!sound) return;
+    await sound.setPositionAsync(value);
+    setPosition(value);
+  };
+
+  const onSlidingStart = () => {
+    isSliding.current = true;
+  };
+
+  const onSlidingComplete = async (value: number) => {
+    isSliding.current = false;
+    await seekAudio(value);
+  };
+
+  const changeSpeed = async () => {
+    const next = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
+    setSpeed(next);
     if (sound) {
-      await sound.pauseAsync();
-      setIsPlaying(false);
-    }
-  }
-
-  const onPlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      setPosition(status.positionMillis);
-      setDuration(status.durationMillis);
-      if (status.didJustFinish) {
-        setIsPlaying(false);
-        setPosition(0);
-      }
+      await sound.setRateAsync(next, true);
     }
   };
 
   useEffect(() => {
-    return sound ? () => { sound.unloadAsync(); } : undefined;
-  }, [sound]);
-
-  const progress = duration > 0 ? (position / duration) * 100 : 0;
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+      }
+    };
+  }, []);
 
   return (
-    <View style={styles.voicePlayer}>
-      <TouchableOpacity onPress={isPlaying ? pauseSound : playSound} style={styles.playBtn}>
-        {isPlaying ? <Pause size={20} color={isMine ? "#FFF" : "#2563EB"} /> : <Play size={20} color={isMine ? "#FFF" : "#2563EB"} />}
-      </TouchableOpacity>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressBar, { width: `${progress}%`, backgroundColor: isMine ? "#BFDBFE" : "#2563EB" }]} />
+    <View
+      style={{
+        width: 250,
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+        }}
+      >
+        <TouchableOpacity
+          onPress={playPause}
+          style={{
+            width: 32,
+            height: 32,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          {isPlaying ? (
+            <Pause size={22} color={isMine ? "#FFF" : "#2563EB"} />
+          ) : (
+            <Play size={22} color={isMine ? "#FFF" : "#2563EB"} />
+          )}
+        </TouchableOpacity>
+
+        <Slider
+          style={{
+            flex: 1,
+            marginHorizontal: 10,
+          }}
+          minimumValue={0}
+          maximumValue={duration}
+          value={position}
+          onSlidingStart={onSlidingStart}
+          onSlidingComplete={onSlidingComplete}
+          minimumTrackTintColor={isMine ? "#FFF" : "#2563EB"}
+          maximumTrackTintColor={isMine ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.1)"}
+          thumbTintColor={isMine ? "#FFF" : "#2563EB"}
+        />
+
+        <TouchableOpacity
+          onPress={changeSpeed}
+        >
+          <View
+            style={{
+              backgroundColor: "#6B7280",
+              borderRadius: 12,
+              paddingHorizontal: 10,
+              paddingVertical: 3,
+            }}
+          >
+            <Text
+              style={{
+                color: "#FFF",
+                fontSize: 12,
+                fontWeight: "600",
+              }}
+            >
+              {speed}x
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
-      <Text style={[styles.voiceTime, { color: isMine ? "#BFDBFE" : "#6B7280" }]}>
-        {formatDur(Math.floor(position / 1000))}
-      </Text>
+
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent:
+            "space-between",
+          marginTop: 4,
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 11,
+            color: isMine
+              ? "#FFF"
+              : "#666",
+          }}
+        >
+          {formatTime(position)}
+        </Text>
+
+        <Text
+          style={{
+            fontSize: 11,
+            color: isMine
+              ? "#FFF"
+              : "#666",
+          }}
+        >
+          {formatTime(duration)}
+        </Text>
+      </View>
     </View>
   );
 }
 
-function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
+
+function MessageBubble({
+  item,
+  isMine,
+  onMediaPress,
+}: {
+  item: any;
+  isMine: boolean;
+  onMediaPress: (uri: string, type: "image" | "video" | "file", fileName?: string) => void;
+}) {
   const type: string = item.message_type || "text";
   const [localUri, setLocalUri] = useState<string | null>(null);
 
@@ -1441,9 +455,9 @@ function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
       if (uri) {
         setLocalUri(uri);
         // ONLY cleanup IF the local download was successful
-        if (!isMine && !item.is_seen && item.media_path && uri.startsWith("file://")) {
-           await deleteRemoteMedia(item.media_path);
-        }
+        // if (!isMine && !item.is_seen && item.media_path && uri.startsWith("file://")) {
+        //    await deleteRemoteMedia(item.media_path);
+        // }
       }
     } catch (e) {
       console.log("loadLocal error:", e);
@@ -1468,11 +482,13 @@ function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
 
         {type === "image" && (
-          <Image
-            source={{ uri: displayUri }}
-            style={styles.msgImage}
-            resizeMode="cover"
-          />
+          <TouchableOpacity onPress={() => onMediaPress(displayUri, "image")}>
+            <Image
+              source={{ uri: displayUri }}
+              style={styles.msgImage}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
         )}
 
         {type === "audio" && (
@@ -1480,19 +496,23 @@ function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
         )}
 
         {type === "video" && (
-          <View style={styles.videoBox}>
-            <Text style={styles.videoIcon}>🎥</Text>
-            <Text style={styles.videoLabel}>Video</Text>
-          </View>
+          <TouchableOpacity onPress={() => onMediaPress(displayUri, "video")}>
+            <View style={styles.videoBox}>
+              <Text style={styles.videoIcon}>🎥</Text>
+              <Text style={styles.videoLabel}>Video</Text>
+            </View>
+          </TouchableOpacity>
         )}
 
         {type === "file" && (
-          <View style={styles.fileRow}>
-            <Text style={styles.fileIcon}>📄</Text>
-            <Text style={[styles.fileLabel, isMine ? styles.myText : styles.otherText]} numberOfLines={2}>
-              {item.file_name || "File"}
-            </Text>
-          </View>
+          <TouchableOpacity onPress={() => onMediaPress(displayUri, "file", item.file_name)}>
+            <View style={styles.fileRow}>
+              <Text style={styles.fileIcon}>📄</Text>
+              <Text style={[styles.fileLabel, isMine ? styles.myText : styles.otherText]} numberOfLines={2}>
+                {item.file_name || "File"}
+              </Text>
+            </View>
+          </TouchableOpacity>
         )}
 
         {type === "text" && (
@@ -1512,6 +532,298 @@ function MessageBubble({ item, isMine }: { item: any; isMine: boolean }) {
   );
 }
 
+// ─── Media Modal ─────────────────────────────────────────────
+
+function MediaModal({
+  visible,
+  onClose,
+  uri,
+  type,
+  fileName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  uri: string;
+  type: "image" | "video" | "file";
+  fileName?: string;
+}) {
+  const [loading, setLoading] = useState(true);
+
+  const handleShare = async () => {
+    try {
+      if (Platform.OS === "web") {
+        window.open(uri, "_blank");
+        return;
+      }
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("Error", "Sharing is not available on this device");
+        return;
+      }
+      await Sharing.shareAsync(uri);
+    } catch (e) {
+      console.log("Sharing error:", e);
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={false}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        {/* Header */}
+        <View style={styles.modalHeader}>
+          <TouchableOpacity onPress={onClose} style={styles.modalCloseBtn}>
+            <X color="#FFF" size={28} />
+          </TouchableOpacity>
+          <Text style={styles.modalTitle} numberOfLines={1}>
+            {type === "file" ? fileName : type.charAt(0).toUpperCase() + type.slice(1)}
+          </Text>
+          <TouchableOpacity onPress={handleShare} style={styles.modalShareBtn}>
+            <Download color="#FFF" size={24} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Content */}
+        <View style={styles.modalContent}>
+          {type === "image" && (
+            <Image
+              source={{ uri }}
+              style={styles.fullImage}
+              resizeMode="contain"
+              onLoadEnd={() => setLoading(false)}
+            />
+          )}
+
+          {type === "video" && (
+            <Video
+              source={{ uri }}
+              rate={1.0}
+              volume={1.0}
+              isMuted={false}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay
+              useNativeControls
+              style={styles.fullVideo}
+              onLoad={() => setLoading(false)}
+            />
+          )}
+
+          {type === "file" && (
+            <View style={styles.filePreview}>
+              <Text style={styles.fileIconLarge}>📄</Text>
+              <Text style={styles.fileNameLarge}>{fileName}</Text>
+              <TouchableOpacity style={styles.openFileBtn} onPress={handleShare}>
+                <ExternalLink color="#FFF" size={20} />
+                <Text style={styles.openFileText}>Open / Save File</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {loading && type !== "file" && (
+            <ActivityIndicator
+              size="large"
+              color="#FFF"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function BouncingDots() {
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const createAnimation = (dot: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(dot, {
+            toValue: -6,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+          Animated.timing(dot, {
+            toValue: 0,
+            duration: 350,
+            useNativeDriver: true,
+          }),
+          Animated.delay(300),
+        ])
+      );
+    };
+
+    const anim1 = createAnimation(dot1, 0);
+    const anim2 = createAnimation(dot2, 150);
+    const anim3 = createAnimation(dot3, 300);
+
+    anim1.start();
+    anim2.start();
+    anim3.start();
+
+    return () => {
+      anim1.stop();
+      anim2.stop();
+      anim3.stop();
+    };
+  }, []);
+
+  return (
+    <View style={styles.dotsRow}>
+      <Animated.Text style={[styles.dotText, { transform: [{ translateY: dot1 }] }]}>•</Animated.Text>
+      <Animated.Text style={[styles.dotText, { transform: [{ translateY: dot2 }] }]}>•</Animated.Text>
+      <Animated.Text style={[styles.dotText, { transform: [{ translateY: dot3 }] }]}>•</Animated.Text>
+    </View>
+  );
+}
+
+function SoundwaveIndicator() {
+  const bar1 = useRef(new Animated.Value(3)).current;
+  const bar2 = useRef(new Animated.Value(3)).current;
+  const bar3 = useRef(new Animated.Value(3)).current;
+  const bar4 = useRef(new Animated.Value(3)).current;
+
+  useEffect(() => {
+    const createAnimation = (bar: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(bar, {
+            toValue: 15,
+            duration: 250,
+            useNativeDriver: false,
+          }),
+          Animated.timing(bar, {
+            toValue: 3,
+            duration: 250,
+            useNativeDriver: false,
+          }),
+        ])
+      );
+    };
+
+    const anim1 = createAnimation(bar1, 0);
+    const anim2 = createAnimation(bar2, 100);
+    const anim3 = createAnimation(bar3, 200);
+    const anim4 = createAnimation(bar4, 300);
+
+    anim1.start();
+    anim2.start();
+    anim3.start();
+    anim4.start();
+
+    return () => {
+      anim1.stop();
+      anim2.stop();
+      anim3.stop();
+      anim4.stop();
+    };
+  }, []);
+
+  return (
+    <View style={styles.soundwaveRow}>
+      <Animated.View style={[styles.soundwaveBar, { height: bar1 }]} />
+      <Animated.View style={[styles.soundwaveBar, { height: bar2 }]} />
+      <Animated.View style={[styles.soundwaveBar, { height: bar3 }]} />
+      <Animated.View style={[styles.soundwaveBar, { height: bar4 }]} />
+    </View>
+  );
+}
+// ─── Web Audio WAV Recorder Helpers ──────────────────────────
+let webAudioContext: any = null;
+let webMediaStream: MediaStream | null = null;
+let webMediaStreamSource: any = null;
+let webRecorderProcessor: any = null;
+let webAudioChunks: Float32Array[] = [];
+let webRecordingLength = 0;
+let webSampleRate = 44100;
+
+async function startWebRecording() {
+  webAudioChunks = [];
+  webRecordingLength = 0;
+  
+  webMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+  webAudioContext = new AudioContextClass();
+  webSampleRate = webAudioContext.sampleRate;
+  
+  webMediaStreamSource = webAudioContext.createMediaStreamSource(webMediaStream);
+  webRecorderProcessor = webAudioContext.createScriptProcessor(4096, 1, 1);
+  
+  webRecorderProcessor.onaudioprocess = (e: any) => {
+    const chunk = e.inputBuffer.getChannelData(0);
+    webAudioChunks.push(new Float32Array(chunk));
+    webRecordingLength += chunk.length;
+  };
+  
+  webMediaStreamSource.connect(webRecorderProcessor);
+  webRecorderProcessor.connect(webAudioContext.destination);
+}
+
+function stopWebRecording(): string {
+  if (webRecorderProcessor) {
+    webRecorderProcessor.disconnect();
+    webRecorderProcessor.onaudioprocess = null;
+  }
+  if (webMediaStreamSource) {
+    webMediaStreamSource.disconnect();
+  }
+  if (webMediaStream) {
+    webMediaStream.getTracks().forEach((track) => track.stop());
+  }
+  if (webAudioContext) {
+    webAudioContext.close();
+  }
+  
+  const mergedBuffer = new Float32Array(webRecordingLength);
+  let offset = 0;
+  for (const chunk of webAudioChunks) {
+    mergedBuffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+  
+  const buffer = new ArrayBuffer(44 + webRecordingLength * 2);
+  const view = new DataView(buffer);
+  
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + webRecordingLength * 2, true);
+  writeString(view, 8, "WAVE");
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, webSampleRate, true);
+  view.setUint32(28, webSampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, "data");
+  view.setUint32(40, webRecordingLength * 2, true);
+  
+  let index = 44;
+  for (let i = 0; i < mergedBuffer.length; i++) {
+    let sample = mergedBuffer[i];
+    sample = Math.max(-1, Math.min(1, sample));
+    view.setInt16(index, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+    index += 2;
+  }
+  
+  const blob = new Blob([view], { type: "audio/wav" });
+  return URL.createObjectURL(blob);
+}
+
+function writeString(view: DataView, offset: number, string: string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
 // ─── Main Screen ─────────────────────────────────────────────
 
 export default function ChatScreen() {
@@ -1527,8 +839,73 @@ export default function ChatScreen() {
   const [recordDuration, setRecordDuration] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [isOpponentTyping, setIsOpponentTyping] = useState(false);
+  const [isOpponentRecording, setIsOpponentRecording] = useState(false);
+  const isTypingRef = useRef(false);
+  const typingTimeoutRef = useRef<any>(null);
+  const broadcastChRef = useRef<any>(null);
+
+  // Media Modal State
+  const [selectedMedia, setSelectedMedia] = useState<{
+    uri: string;
+    type: "image" | "video" | "file";
+    fileName?: string;
+  } | null>(null);
+
+  // Block State
+  const [isBlocked, setIsBlocked] = useState(false); // Have I blocked them?
+  const [amIBlocked, setAmIBlocked] = useState(false); // Have they blocked me?
+
+  const handleMediaPress = (uri: string, type: "image" | "video" | "file", fileName?: string) => {
+    setSelectedMedia({ uri, type, fileName });
+  };
+
+  const checkBlockStatus = useCallback(async () => {
+    if (!user?.id || !otherUser?.id) return;
+    
+    // Check if I blocked them
+    const { data: iBlocked } = await supabase
+      .from("blocked_users")
+      .select("*")
+      .eq("blocker_id", user.id)
+      .eq("blocked_id", otherUser.id)
+      .maybeSingle();
+    
+    // Check if they blocked me
+    const { data: theyBlocked } = await supabase
+      .from("blocked_users")
+      .select("*")
+      .eq("blocker_id", otherUser.id)
+      .eq("blocked_id", user.id)
+      .maybeSingle();
+
+    setIsBlocked(!!iBlocked);
+    setAmIBlocked(!!theyBlocked);
+  }, [user?.id, otherUser?.id]);
+
+  useEffect(() => {
+    checkBlockStatus();
+  }, [otherUser?.id]);
+
   const startRecording = async () => {
     try {
+      if (Platform.OS === "web") {
+        await startWebRecording();
+        setIsRecording(true);
+        setRecordDuration(0);
+        timerRef.current = setInterval(() => {
+          setRecordDuration((prev) => prev + 1);
+        }, 1000) as any;
+
+        // Broadcast recording status
+        broadcastChRef.current?.send({
+          type: "broadcast",
+          event: "recording",
+          payload: { isRecording: true, userId: user?.id },
+        });
+        return;
+      }
+
       const permission = await Audio.requestPermissionsAsync();
       if (permission.status !== "granted") {
         Alert.alert("Permission Denied", "Microphone access is needed to record voice messages.");
@@ -1549,27 +926,85 @@ export default function ChatScreen() {
       setRecordDuration(0);
       timerRef.current = setInterval(() => {
         setRecordDuration((prev) => prev + 1);
-      }, 1000);
+      }, 1000) as any;
+
+      // Broadcast recording status
+      broadcastChRef.current?.send({
+        type: "broadcast",
+        event: "recording",
+        payload: { isRecording: true, userId: user?.id },
+      });
     } catch (err) {
       console.error("Failed to start recording", err);
     }
   };
 
+  // const stopRecording = async () => {
+  //   if (!recording) return;
+    
+  //   setIsRecording(false);
+  //   if (timerRef.current) clearInterval(timerRef.current);
+    
+  //   try {
+  //     await recording.stopAndUnloadAsync();
+  //     const uri = recording.getURI();
+  //     console.log("Recording stopped and saved at:", uri);
+  //     if (uri) {
+  //       await sendMedia(uri, "audio/mp4", "audio" , undefined , recordDuration);
+  //     }
+  //   } catch (err) {
+  //     console.error("Failed to stop recording", err);
+  //   }
+  //   setRecording(null);
+  // };
+
   const stopRecording = async () => {
-    if (!recording) return;
-    
+    if (Platform.OS !== "web" && !recording) return;
+
     setIsRecording(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-    
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    // Broadcast recording status
+    broadcastChRef.current?.send({
+      type: "broadcast",
+      event: "recording",
+      payload: { isRecording: false, userId: user?.id },
+    });
+
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      let uri: string | null = null;
+      if (Platform.OS === "web") {
+        uri = stopWebRecording();
+      } else if (recording) {
+        await recording.stopAndUnloadAsync();
+        uri = recording.getURI();
+      }
+
+      console.log("Audio URI:", uri);
+
       if (uri) {
-        await sendMedia(uri, "audio/m4a", "audio");
+        if (Platform.OS !== "web") {
+          const info = await FileSystem.getInfoAsync(uri);
+          console.log("Audio file info:", info);
+        }
+
+        const mimeType = Platform.OS === "web" ? "audio/wav" : "audio/mp4";
+
+        await sendMedia(
+          uri,
+          mimeType,
+          "audio",
+          undefined,
+          recordDuration
+        );
       }
     } catch (err) {
-      console.error("Failed to stop recording", err);
+      console.log(err);
     }
+
     setRecording(null);
   };
 
@@ -1593,24 +1028,24 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const loadBackgroundConfig = useCallback(async () => {
-    if (!otherUser?.id) return;
+    if (!otherUser?.id || !user?.id) return;
     try {
-      const type = await AsyncStorage.getItem(`chat_bg_type_${otherUser.id}`);
+      const type = await AsyncStorage.getItem(`chat_bg_type_${user.id}_${otherUser.id}`);
       if (type === "image") {
-        const uri = await AsyncStorage.getItem(`chat_image_uri_${otherUser.id}`);
+        const uri = await AsyncStorage.getItem(`chat_image_uri_${user.id}_${otherUser.id}`);
         if (uri) setBackgroundConfig({ type: "image", value: uri });
       } else {
-        const hex = await AsyncStorage.getItem(`chat_color_hex_${otherUser.id}`);
+        const hex = await AsyncStorage.getItem(`chat_color_hex_${user.id}_${otherUser.id}`);
         setBackgroundConfig({ type: "color", value: hex || "#EEF2FF" });
       }
     } catch (e) {
       console.error("Load BG error:", e);
     }
-  }, [otherUser?.id]);
+  }, [user?.id, otherUser?.id]);
 
   useEffect(() => {
-    if (otherUser) loadBackgroundConfig();
-  }, [otherUser, loadBackgroundConfig, settingsVisible]);
+    if (otherUser && user) loadBackgroundConfig();
+  }, [otherUser, user, loadBackgroundConfig, settingsVisible]);
 
   const loadChatDetails = useCallback(async () => {
     if (!id || !user?.id) return;
@@ -1690,16 +1125,37 @@ export default function ChatScreen() {
   }, [user?.id]);
 
   const loadMessages = useCallback(async () => {
-    const { data } = await supabase
+    if (!id) return;
+    
+    // 1. Load local cache first for instant display
+    const localMessages = await getCachedMessages(id as string);
+    if (localMessages.length > 0) {
+      setMessages(localMessages);
+      scrollBottom();
+    }
+
+    // 2. Fetch from Supabase
+    const { data: remoteMessages } = await supabase
       .from("messages")
       .select("*")
       .eq("chat_id", id)
       .order("created_at", { ascending: true });
     
-    if (data) {
-      setMessages(data);
-      // Mark all received messages as delivered if they aren't already
-      const undelivered = data.filter(m => m.sender_id !== user?.id && !m.is_delivered);
+    if (remoteMessages) {
+      // Merge cache and remote to avoid losing nightly deleted messages
+      const mergedMap = new Map();
+      localMessages.forEach((m) => mergedMap.set(m.id, m));
+      remoteMessages.forEach((m) => mergedMap.set(m.id, m));
+      
+      const merged = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      setMessages(merged);
+      await saveCachedMessages(id as string, merged);
+
+      // Mark received messages as delivered
+      const undelivered = remoteMessages.filter(m => m.sender_id !== user?.id && !m.is_delivered);
       if (undelivered.length > 0) {
         await supabase
           .from("messages")
@@ -1710,6 +1166,13 @@ export default function ChatScreen() {
     }
     scrollBottom();
   }, [id, user?.id]);
+
+  // Automatically save messages state to local cache
+  useEffect(() => {
+    if (messages.length > 0 && id) {
+      saveCachedMessages(id as string, messages);
+    }
+  }, [messages, id]);
 
   const getOtherUser = useCallback(async () => {
     const { data: member } = await supabase
@@ -1739,16 +1202,41 @@ export default function ChatScreen() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages", filter: `chat_id=eq.${id}` },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === "INSERT") {
+            // Check block status before showing message
+            if (payload.new.sender_id !== user?.id) {
+              const { data: blocked } = await supabase
+                .from("blocked_users")
+                .select("*")
+                .eq("blocker_id", user?.id)
+                .eq("blocked_id", payload.new.sender_id)
+                .maybeSingle();
+              
+              if (blocked) return; // Do not show message if blocked
+            }
+
             setMessages((prev) => {
-              if (prev.find((m) => m.id === payload.new.id)) return prev;
+              const existingIndex = prev.findIndex((m) => 
+                m.id === payload.new.id || 
+                (m.sender_id === payload.new.sender_id && 
+                 m.message === payload.new.message && 
+                 m.message_type === payload.new.message_type &&
+                 String(m.id).startsWith("temp_"))
+              );
               
               if (payload.new.sender_id !== user?.id) {
                 // If we are the recipient, mark as delivered (and seen if we are in chat)
                 markDelivered(payload.new.id);
                 markSeen();
               }
+
+              if (existingIndex !== -1) {
+                const updated = [...prev];
+                updated[existingIndex] = payload.new;
+                return updated;
+              }
+
               return [...prev, payload.new];
             });
             scrollBottom();
@@ -1759,10 +1247,13 @@ export default function ChatScreen() {
           }
         }
       )
-      .subscribe();
-
-    const profileCh = supabase
-      .channel(`chat-profile-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "blocked_users" },
+        () => {
+          checkBlockStatus();
+        }
+      )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles" },
@@ -1774,9 +1265,53 @@ export default function ChatScreen() {
       )
       .subscribe();
 
+    // Supabase Realtime Broadcast Channel
+    const broadcastCh = supabase.channel(`chat-broadcast-${id}`);
+    broadcastChRef.current = broadcastCh;
+
+    broadcastCh
+      .on("broadcast", { event: "message" }, async (payload) => {
+        const newMsg = payload.payload;
+        if (newMsg.sender_id !== user?.id) {
+          // Check block status before showing message
+          const { data: blocked } = await supabase
+            .from("blocked_users")
+            .select("*")
+            .eq("blocker_id", user?.id)
+            .eq("blocked_id", newMsg.sender_id)
+            .maybeSingle();
+
+          if (blocked) return;
+
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === newMsg.id || (newMsg.tempId && m.id === newMsg.tempId))) {
+              return prev;
+            }
+            return [...prev, newMsg];
+          });
+          scrollBottom();
+        }
+      })
+      .on("broadcast", { event: "typing" }, (payload) => {
+        const { isTyping, userId } = payload.payload;
+        if (userId !== user?.id) {
+          setIsOpponentTyping(isTyping);
+        }
+      })
+      .on("broadcast", { event: "recording" }, (payload) => {
+        const { isRecording, userId } = payload.payload;
+        if (userId !== user?.id) {
+          setIsOpponentRecording(isRecording);
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(msgCh);
-      supabase.removeChannel(profileCh);
+      if (broadcastCh) {
+        supabase.removeChannel(broadcastCh);
+      }
+      broadcastChRef.current = null;
     };
   }, [id, user?.id]);
 
@@ -1785,24 +1320,47 @@ export default function ChatScreen() {
     const text = message.trim();
     if (!text || !user?.id) return;
 
+    if (isBlocked || amIBlocked) {
+      Alert.alert("Blocked", "You cannot send messages to this contact.");
+      return;
+    }
+
     const tempId = `temp_${Date.now()}`;
     const now = new Date().toISOString();
     
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: tempId,
-        chat_id: id,
-        sender_id: user.id,
-        message: text,
-        message_type: "text",
-        created_at: now,
-        is_seen: false,
-        is_delivered: false,
-      },
-    ]);
+    const tempMsg = {
+      id: tempId,
+      tempId: tempId,
+      chat_id: id,
+      sender_id: user.id,
+      message: text,
+      message_type: "text",
+      created_at: now,
+      is_seen: false,
+      is_delivered: false,
+    };
+
+    setMessages((prev) => [...prev, tempMsg]);
     setMessage("");
     scrollBottom();
+
+    // Broadcast instantly
+    broadcastChRef.current?.send({
+      type: "broadcast",
+      event: "message",
+      payload: tempMsg,
+    });
+
+    // Clear typing status
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      broadcastChRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { isTyping: false, userId: user.id },
+      });
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     const { data, error } = await supabase
       .from("messages")
@@ -1820,12 +1378,61 @@ export default function ChatScreen() {
     setMessages((prev) =>
       error ? prev.filter((m) => m.id !== tempId) : prev.map((m) => (m.id === tempId ? data : m))
     );
+
+    if (!error && data) {
+      sendPushForMessage(id as string, user.id, text, "text");
+    }
+  };
+
+  const handleMessageChange = (text: string) => {
+    setMessage(text);
+    if (!user?.id) return;
+
+    if (text.trim().length === 0) {
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        broadcastChRef.current?.send({
+          type: "broadcast",
+          event: "typing",
+          payload: { isTyping: false, userId: user.id },
+        });
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      return;
+    }
+
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      broadcastChRef.current?.send({
+        type: "broadcast",
+        event: "typing",
+        payload: { isTyping: true, userId: user.id },
+      });
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        broadcastChRef.current?.send({
+          type: "broadcast",
+          event: "typing",
+          payload: { isTyping: false, userId: user.id },
+        });
+      }
+    }, 2000);
   };
 
   // ── Send media ──
   // ── Send media ──
-  const sendMedia = async (uri: string, mimeType: string, type: "image" | "video" | "file" | "audio", fileName?: string) => {
+  const sendMedia = async (uri: string, mimeType: string, type: "image" | "video" | "file" | "audio", fileName?: string, duration?: number) => {
     if (!user?.id) return;
+
+    if (isBlocked || amIBlocked) {
+      Alert.alert("Blocked", "You cannot send media to this contact.");
+      return;
+    }
+
     setUploading(true);
     try {
       const folder = type === "image" ? "images" : type === "video" ? "videos" : type === "audio" ? "audio" : "files";
@@ -1846,6 +1453,7 @@ export default function ChatScreen() {
           media_path: path,
           message_type: type, 
           file_name: fileName, 
+          audio_duration: duration,
           is_seen: false, 
           is_delivered: false 
         })
@@ -1857,6 +1465,16 @@ export default function ChatScreen() {
         scrollBottom(); 
         // Cache it locally immediately for the sender
         await getLocalMediaUri(url, path);
+
+        // Broadcast media message instantly
+        broadcastChRef.current?.send({
+          type: "broadcast",
+          event: "message",
+          payload: data,
+        });
+
+        // Trigger push notification for media message
+        sendPushForMessage(id as string, user.id, url, type);
       }
     } finally {
       setUploading(false);
@@ -1966,11 +1584,25 @@ export default function ChatScreen() {
           >
             <Phone size={20} color="#2563EB" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerActionBtn} 
-            onPress={() => Alert.alert("Video Call", `Starting video call with ${name}...`)}
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            onPress={() =>
+              Alert.alert(
+                "Video Call",
+                `Starting video call with ${name}...`
+              )
+            }
           >
-            <Video size={22} color="#2563EB" />
+            {/* <ExpoVideo
+              source={{ uri: displayUri }}
+              style={{
+                width: 220,
+                height: 180,
+                borderRadius: 10,
+              }}
+              useNativeControls
+              resizeMode="contain"
+            /> */}
           </TouchableOpacity>
         </View>
       </View>
@@ -1989,14 +1621,19 @@ export default function ChatScreen() {
       {/* Messages */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 30}
       >
         <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id.toString()}
           renderItem={({ item }) => (
-            <MessageBubble item={item} isMine={item.sender_id === user?.id} />
+            <MessageBubble 
+              item={item} 
+              isMine={item.sender_id === user?.id} 
+              onMediaPress={handleMediaPress}
+            />
           )}
           contentContainerStyle={styles.messageList}
           onContentSizeChange={scrollBottom}
@@ -2011,48 +1648,86 @@ export default function ChatScreen() {
           </View>
         )}
 
-        {/* Input */}
-        <View style={styles.inputArea}>
-          {!isRecording && (
-            <TouchableOpacity style={styles.attachBtn} onPress={showAttachMenu}>
-              <Text style={styles.attachIcon}>📎</Text>
-            </TouchableOpacity>
-          )}
-
-          {isRecording ? (
-            <View style={styles.recordingOverlay}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.recordingText}>Recording {formatDuration(recordDuration)}</Text>
+        {/* Typing and Recording indicators */}
+        {isOpponentTyping && (
+          <View style={styles.indicatorContainer}>
+            <View style={styles.indicatorBubble}>
+              <Text style={styles.indicatorText}>{otherUser?.full_name || "Opponent"} is typing</Text>
+              <BouncingDots />
             </View>
-          ) : (
-            <TextInput
-              style={styles.input}
-              placeholder="Type a message..."
-              placeholderTextColor="#9CA3AF"
-              value={message}
-              onChangeText={setMessage}
-              multiline
-              maxLength={2000}
-            />
-          )}
+          </View>
+        )}
 
-          {message.trim().length === 0 ? (
-            <TouchableOpacity
-              style={[styles.sendBtn, isRecording && { backgroundColor: "#EF4444" }]}
-              onPress={isRecording ? stopRecording : startRecording}
-            >
-              {isRecording ? <StopCircle size={22} color="#FFF" /> : <Mic size={22} color="#FFF" />}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
-              onPress={sendText}
-              disabled={!message.trim()}
-            >
-              <Text style={styles.sendIcon}>➤</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {isOpponentRecording && (
+          <View style={styles.indicatorContainer}>
+            <View style={styles.indicatorBubble}>
+              <View style={styles.recordingDotSmall} />
+              <Text style={styles.indicatorText}>{otherUser?.full_name || "Opponent"} is recording audio</Text>
+              <SoundwaveIndicator />
+            </View>
+          </View>
+        )}
+
+        {/* Input */}
+        {(isBlocked || amIBlocked) ? (
+          <View style={styles.blockedNotice}>
+            <Text style={styles.blockedNoticeText}>
+              {isBlocked ? "You have blocked this contact." : "This contact has blocked you."}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.inputArea}>
+            {!isRecording && (
+              <TouchableOpacity style={styles.attachBtn} onPress={showAttachMenu}>
+                <Text style={styles.attachIcon}>📎</Text>
+              </TouchableOpacity>
+            )}
+
+            {isRecording ? (
+              <View style={styles.recordingOverlay}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingText}>Recording {formatDuration(recordDuration)}</Text>
+              </View>
+            ) : (
+              <TextInput
+                style={styles.input}
+                placeholder="Type a message..."
+                placeholderTextColor="#9CA3AF"
+                value={message}
+                onChangeText={handleMessageChange}
+                multiline
+                maxLength={2000}
+              />
+            )}
+
+            {message.trim().length === 0 ? (
+              <TouchableOpacity
+                style={[styles.sendBtn, isRecording && { backgroundColor: "#EF4444" }]}
+                onPress={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? <StopCircle size={22} color="#FFF" /> : <Mic size={22} color="#FFF" />}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
+                onPress={sendText}
+                disabled={!message.trim()}
+              >
+                <Text style={styles.sendIcon}>➤</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {selectedMedia && (
+          <MediaModal
+            visible={!!selectedMedia}
+            onClose={() => setSelectedMedia(null)}
+            uri={selectedMedia.uri}
+            type={selectedMedia.type}
+            fileName={selectedMedia.fileName}
+          />
+        )}
       </KeyboardAvoidingView>
     </View>
   );
@@ -2091,6 +1766,38 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 16, fontWeight: "700", color: "#111827" },
   onlineText: { fontSize: 12, color: "#22C55E", marginTop: 1 },
   offlineText: { fontSize: 11, color: "#9CA3AF", marginTop: 1 },
+
+  // Media Modal Styles
+  modalContainer: { flex: 1, backgroundColor: "#000" },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: Platform.OS === "ios" ? 50 : 20,
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    zIndex: 10,
+  },
+  modalCloseBtn: { padding: 5 },
+  modalShareBtn: { padding: 5 },
+  modalTitle: { color: "#FFF", fontSize: 16, fontWeight: "600", flex: 1, textAlign: "center", marginHorizontal: 15 },
+  modalContent: { flex: 1, justifyContent: "center", alignItems: "center" },
+  fullImage: { width: "100%", height: "100%" },
+  fullVideo: { width: "100%", height: "100%" },
+  filePreview: { alignItems: "center", padding: 30 },
+  fileIconLarge: { fontSize: 80, marginBottom: 20 },
+  fileNameLarge: { color: "#FFF", fontSize: 18, fontWeight: "600", textAlign: "center", marginBottom: 30 },
+  openFileBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    gap: 10,
+  },
+  openFileText: { color: "#FFF", fontSize: 16, fontWeight: "600" },
 
   headerActions: {
     flexDirection: "row",
@@ -2248,5 +1955,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#EF4444",
     fontWeight: "600",
+  },
+  blockedNotice: {
+    padding: 20,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    borderTopWidth: 0.5,
+    borderTopColor: "#E5E7EB",
+  },
+  blockedNoticeText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  indicatorContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "transparent",
+  },
+  indicatorBubble: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderBottomLeftRadius: 4,
+    gap: 8,
+    maxWidth: "80%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  indicatorText: {
+    fontSize: 13,
+    color: "#4B5563",
+    fontWeight: "500",
+  },
+  dotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    height: 10,
+  },
+  dotText: {
+    fontSize: 14,
+    color: "#2563EB",
+    fontWeight: "900",
+  },
+  soundwaveRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 2,
+    height: 16,
+  },
+  soundwaveBar: {
+    width: 3,
+    backgroundColor: "#EF4444",
+    borderRadius: 1.5,
+  },
+  recordingDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#EF4444",
   },
 });

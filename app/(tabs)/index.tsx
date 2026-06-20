@@ -515,13 +515,17 @@
 
 
 
-import { router } from "expo-router";
-import { Bell, LogOut, Search, SquarePen, X } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as LocalAuthentication from "expo-local-authentication";
+import { router, useFocusEffect } from "expo-router";
+import { Bell, ChevronRight, Lock, LogOut, Search, SquarePen, X, AlertTriangle, Download } from "lucide-react-native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
+  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -530,8 +534,16 @@ import {
   View,
 } from "react-native";
 import { useAuth } from "../../hooks/useAuth";
+import { useTheme } from "../../hooks/use-theme";
 import { supabase } from "../../lib/supabase";
 import { markAllMessagesDelivered } from "../../services/chatService";
+import {
+  getCachedMessages,
+  syncAndCleanupSupabase,
+  checkAutoDeletePolicy,
+  backupAllData,
+  AutoDeleteInfo,
+} from "../../services/storageService";
 
 function getInitials(name: string) {
   if (!name) return "?";
@@ -561,6 +573,12 @@ function formatTime(isoString?: string) {
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit" });
 }
 
+function formatDuration(seconds: number) {
+  const min = Math.floor(seconds / 60);
+  const rem = seconds % 60;
+  return `${min}:${String(rem).padStart(2, "0")}`;
+}
+
 const AVATAR_COLORS = [
   "#2563EB", "#7C3AED", "#DB2777", "#D97706",
   "#059669", "#DC2626", "#0891B2", "#9333EA",
@@ -574,16 +592,37 @@ function getAvatarColor(name: string) {
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { colors } = useTheme();
   const [chats, setChats] = useState<any[]>([]);
   const [filteredChats, setFilteredChats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
+  // Locked Chats State
+  const [lockedChats, setLockedChats] = useState<any[]>([]);
+  const [showLockedSection, setShowLockedSection] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [showPinModal, setShowPinModal] = useState(false);
+
+  // Retention Alert state
+  const [autoDeleteInfo, setAutoDeleteInfo] = useState<AutoDeleteInfo | null>(null);
+  const [countdownText, setCountdownText] = useState("");
+
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
     try {
       await markAllMessagesDelivered(user.id);
+
+      // Perform background sync/cleanup and fetch auto-delete info
+      try {
+        await syncAndCleanupSupabase(user.id);
+        const info = await checkAutoDeletePolicy(user.id);
+        setAutoDeleteInfo(info);
+      } catch (e) {
+        console.log("Background sync error:", e);
+      }
+
       const { data: myChats, error } = await supabase
         .from("chat_members")
         .select("chat_id")
@@ -592,10 +631,12 @@ export default function HomeScreen() {
       if (error || !myChats?.length) {
         setChats([]);
         setFilteredChats([]);
+        setLockedChats([]);
         return;
       }
 
       const result: any[] = [];
+      const lockedResult: any[] = [];
       const seenProfileIds = new Set<string>();
 
       for (const chat of myChats) {
@@ -610,19 +651,29 @@ export default function HomeScreen() {
         if (seenProfileIds.has(otherMember.user_id)) continue;
         seenProfileIds.add(otherMember.user_id);
 
+        // Check Local Lock
+        const isLocked = await AsyncStorage.getItem(`chat_locked_${user.id}_${otherMember.user_id}`);
+
         const { data: profile } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", otherMember.user_id)
           .maybeSingle();
 
-        const { data: lastMessage } = await supabase
-          .from("messages")
-          .select("*")
-          .eq("chat_id", chat.chat_id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Load cached messages first for offline support & nightly deletions fallback
+        const cachedMsgs = await getCachedMessages(chat.chat_id);
+        let lastMessage = cachedMsgs[cachedMsgs.length - 1] || null;
+
+        if (!lastMessage) {
+          const { data } = await supabase
+            .from("messages")
+            .select("*")
+            .eq("chat_id", chat.chat_id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          lastMessage = data;
+        }
 
         const { count: unreadCount } = await supabase
           .from("messages")
@@ -631,23 +682,33 @@ export default function HomeScreen() {
           .eq("is_seen", false)
           .neq("sender_id", user.id);
 
-        result.push({
+        const chatObj = {
           chat_id: chat.chat_id,
           profile,
           lastMessage,
           unreadCount: unreadCount || 0,
-        });
+        };
+
+        if (isLocked === "true") {
+          lockedResult.push(chatObj);
+        } else {
+          result.push(chatObj);
+        }
       }
 
-      result.sort((a, b) => {
+      const sortByTime = (a: any, b: any) => {
         const tA = a.lastMessage?.created_at
           ? new Date(a.lastMessage.created_at).getTime() : 0;
         const tB = b.lastMessage?.created_at
           ? new Date(b.lastMessage.created_at).getTime() : 0;
         return tB - tA;
-      });
+      };
+
+      result.sort(sortByTime);
+      lockedResult.sort(sortByTime);
 
       setChats(result);
+      setLockedChats(lockedResult);
       applySearch(result, search);
       loadRequests();
     } catch (err) {
@@ -656,6 +717,44 @@ export default function HomeScreen() {
       setLoading(false);
     }
   }, [user?.id, search]);
+
+  const handleUnlockLockedChats = async () => {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Unlock your private chats",
+          fallbackLabel: "Use PIN",
+        });
+
+        if (result.success) {
+          router.push("/locked-chats");
+          return;
+        }
+      }
+
+      // Fallback to PIN if biometrics fail or not available
+      setShowPinModal(true);
+    } catch (e) {
+      console.error(e);
+      setShowPinModal(true);
+    }
+  };
+
+  const handlePinVerification = async () => {
+    if (!user?.id) return;
+    const globalPin = await AsyncStorage.getItem(`chat_pin_${user.id}`);
+    if (pinInput === globalPin) {
+      setShowPinModal(false);
+      setPinInput("");
+      router.push("/locked-chats");
+    } else {
+      Alert.alert("Error", "Incorrect PIN");
+      setPinInput("");
+    }
+  };
 
   const loadRequests = async () => {
     if (!user?.id) return;
@@ -686,9 +785,43 @@ export default function HomeScreen() {
     applySearch(chats, search);
   }, [search, chats]);
 
+  // Retention warning banner ticker
   useEffect(() => {
-    loadChats();
+    if (!autoDeleteInfo?.enabled || autoDeleteInfo.timeLeftMs <= 0) {
+      setCountdownText("");
+      return;
+    }
 
+    let remaining = autoDeleteInfo.timeLeftMs;
+    const interval = setInterval(() => {
+      remaining -= 1000;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        loadChats();
+      } else {
+        const d = Math.floor(remaining / (24 * 60 * 60 * 1000));
+        const h = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+        const m = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+        const s = Math.floor((remaining % (60 * 1000)) / 1000);
+        let label = "";
+        if (d > 0) label += `${d}d `;
+        label += `${h}h ${m}m ${s}s`;
+        setCountdownText(label);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [autoDeleteInfo]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadChats();
+      // Reset lock state when screen comes into focus
+      setShowLockedSection(false);
+    }, [loadChats])
+  );
+
+  useEffect(() => {
     const channel = supabase
       .channel("home-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, loadChats)
@@ -699,6 +832,13 @@ export default function HomeScreen() {
 
     return () => { supabase.removeChannel(channel); };
   }, [loadChats, user?.id]);
+
+  const onRefresh = async () => {
+    setLoading(true);
+    await loadChats();
+    setShowLockedSection(true); // Reveal on swipe down
+    setLoading(false);
+  };
 
   const logout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -729,7 +869,8 @@ export default function HomeScreen() {
     const preview =
       msgType === "image" ? "📷 Photo"
       : msgType === "video" ? "🎥 Video"
-      : msgType === "file" ? "📄 File"
+      : msgType === "audio" ? `🎤 ${formatDuration(item.lastMessage?.audio_duration || 0)}`
+      : msgType === "file" ? `📄 ${item.lastMessage?.file_name || "File"}`
       : msgText;
 
     return (
@@ -778,12 +919,12 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <TouchableOpacity onPress={() => setShowLockedSection(!showLockedSection)}>
           <Text style={styles.headerTitle}>BlinkChat</Text>
           <Text style={styles.headerSub}>
             {chats.length > 0 ? `${chats.length} conversation${chats.length > 1 ? "s" : ""}` : ""}
           </Text>
-        </View>
+        </TouchableOpacity>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.notifBtn}
@@ -825,6 +966,39 @@ export default function HomeScreen() {
         )}
       </View>
 
+      {/* Auto Delete Warning Banner */}
+      {autoDeleteInfo?.enabled && autoDeleteInfo.triggerWarning && (
+        <View style={[styles.warningBanner, { backgroundColor: colors.error + "15", borderColor: colors.error }]}>
+          <AlertTriangle size={20} color={colors.error} style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.warningBannerTitle, { color: colors.error }]}>Auto-Deletion Tomorrow</Text>
+            <Text style={[styles.warningBannerText, { color: colors.text }]}>
+              {autoDeleteInfo.warningText}
+            </Text>
+            <Text style={[styles.warningBannerCountdown, { color: colors.error }]}>
+              Countdown: {countdownText}
+            </Text>
+          </View>
+          <TouchableOpacity style={[styles.warningBannerBackupBtn, { backgroundColor: colors.accent }]} onPress={() => backupAllData(user?.id || "")}>
+            <Download size={14} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Locked Chats Entry */}
+      {(lockedChats.length > 0 || showLockedSection) && (
+        <TouchableOpacity 
+          style={styles.lockedSectionBtn} 
+          onPress={() => setShowPinModal(true)}
+        >
+          <View style={styles.lockedRow}>
+            <Lock size={18} color="#075E54" />
+            <Text style={styles.lockedText}>Locked Chats</Text>
+          </View>
+          <ChevronRight size={18} color="#9CA3AF" />
+        </TouchableOpacity>
+      )}
+
       {/* Chat List */}
       {loading ? (
         <View style={styles.emptyState}>
@@ -855,12 +1029,52 @@ export default function HomeScreen() {
           data={filteredChats}
           keyExtractor={(item) => item.chat_id}
           renderItem={renderChat}
-          refreshing={loading}
-          onRefresh={loadChats}
+          refreshControl={
+            <RefreshControl refreshing={loading} onRefresh={onRefresh} />
+          }
           contentContainerStyle={{ paddingVertical: 8 }}
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* PIN Verification Modal */}
+      <Modal visible={showPinModal} transparent animationType="fade">
+        <View style={styles.pinModalOverlay}>
+          <View style={styles.pinModalContent}>
+            <Text style={styles.pinModalTitle}>Enter Chat PIN</Text>
+            <Text style={styles.pinModalSub}>Enter your 4-digit PIN to reveal locked chats</Text>
+            
+            <TextInput
+              style={styles.pinInput}
+              value={pinInput}
+              onChangeText={setPinInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              autoFocus
+              placeholder="****"
+            />
+
+            <View style={styles.pinModalActions}>
+              <TouchableOpacity 
+                style={styles.pinCancelBtn} 
+                onPress={() => {
+                  setShowPinModal(false);
+                  setPinInput("");
+                }}
+              >
+                <Text style={styles.pinCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.pinSubmitBtn} 
+                onPress={handlePinVerification}
+              >
+                <Text style={styles.pinSubmitText}>Unlock</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1104,5 +1318,87 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 15,
+  },
+
+  // Locked Chats Styles
+  lockedSectionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+  },
+  lockedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  lockedText: { fontSize: 15, fontWeight: "600", color: "#075E54" },
+
+  // PIN Modal Styles
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  pinModalContent: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+  },
+  pinModalTitle: { fontSize: 20, fontWeight: "700", color: "#111827", marginBottom: 8 },
+  pinModalSub: { fontSize: 14, color: "#6B7280", marginBottom: 24, textAlign: "center" },
+  pinInput: {
+    width: 150,
+    height: 50,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    fontSize: 24,
+    textAlign: "center",
+    letterSpacing: 10,
+    marginBottom: 24,
+    color: "#111827",
+  },
+  pinModalActions: { flexDirection: "row", gap: 12, width: "100%" },
+  pinCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" },
+  pinCancelText: { fontSize: 15, fontWeight: "600", color: "#4B5563" },
+  pinSubmitBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#075E54", alignItems: "center" },
+  pinSubmitText: { fontSize: 15, fontWeight: "600", color: "#FFFFFF" },
+  warningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  warningBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  warningBannerText: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  warningBannerCountdown: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  warningBannerBackupBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
   },
 });

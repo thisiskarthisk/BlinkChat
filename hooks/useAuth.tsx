@@ -12,6 +12,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { AppState, AppStateStatus } from "react-native";
 import { supabase } from "../lib/supabase";
 import { markAllMessagesDelivered } from "../services/chatService";
+import { registerForPushNotificationsAsync } from "../services/pushNotificationService";
 
 interface Profile {
   id: string;
@@ -23,6 +24,12 @@ interface Profile {
   status: string | null;
   is_online: boolean;
   last_seen: string | null;
+  company_name: string | null;
+  company_id: string | null;
+  is_company_admin: boolean;
+  is_company_account: boolean;
+  website: string | null;
+  push_token: string | null;
 }
 
 interface AuthContextType {
@@ -33,6 +40,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<any>;
   signUp: (email: string, password: string, metadata?: { full_name?: string; phone?: string }) => Promise<any>;
   signOut: () => Promise<void>;
+  updateProfile: (updated: Partial<Profile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -66,6 +74,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => sub.remove();
   }, []);
+
+  // ── Register push token on app start or login ──
+  useEffect(() => {
+    if (user && profile) {
+      const registerPush = async () => {
+        try {
+          const token = await registerForPushNotificationsAsync();
+          if (token && profile.push_token !== token) {
+            const { error } = await supabase
+              .from("profiles")
+              .update({ push_token: token })
+              .eq("id", user.id);
+
+            if (!error) {
+              console.log("Registered/updated push token:", token);
+              updateProfile({ push_token: token });
+            } else {
+              console.error("Failed to update push token in database:", error);
+            }
+          }
+        } catch (err) {
+          console.error("Error registering push token:", err);
+        }
+      };
+
+      // Register push token shortly after loading
+      const timer = setTimeout(registerPush, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.id, !!profile]);
 
   // ── Session init + listener ──
   useEffect(() => {
@@ -104,11 +142,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const ensureProfile = async (authUser: User): Promise<Profile | null> => {
     const { data: existing } = await supabase
       .from("profiles")
-      .select("*")
+      .select("*, company:companies(*)")
       .eq("id", authUser.id)
       .maybeSingle();
 
-    if (existing) return existing;
+    if (existing) {
+      return {
+        ...existing,
+        company_name: (existing as any).company?.name || null,
+        website: (existing as any).company?.website || null,
+      };
+    }
 
     // Auto-create profile if missing
     const { data } = await supabase
@@ -116,17 +160,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .upsert({
         id: authUser.id,
         full_name: authUser.user_metadata?.full_name || "",
-        username: authUser.email?.split("@")[0] || `user_${authUser.id.slice(0, 6)}`,
+        username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || `user_${authUser.id.slice(0, 6)}`,
         email: authUser.email || "",
-        phone: authUser.user_metadata?.phone || "",
+        phone: authUser.user_metadata?.phone || null,
         status: "Hey there! I am using BlinkChat",
         is_online: true,
         last_seen: new Date().toISOString(),
+        company_id: authUser.user_metadata?.company_id || null,
+        is_company_admin: authUser.user_metadata?.is_company_admin || false,
+        is_company_account: authUser.user_metadata?.is_company_admin || !!authUser.user_metadata?.company_id || false,
       })
-      .select()
+      .select("*, company:companies(*)")
       .single();
 
-    return data;
+    if (data) {
+      return {
+        ...data,
+        company_name: (data as any).company?.name || null,
+        website: (data as any).company?.website || null,
+      };
+    }
+    return null;
   };
 
   const signIn = async (email: string, password: string) => {
@@ -156,8 +210,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const updateProfile = (updated: Partial<Profile>) => {
+    setProfile((prev) => (prev ? { ...prev, ...updated } : null));
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signUp, signOut, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

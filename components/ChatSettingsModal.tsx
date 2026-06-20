@@ -281,7 +281,9 @@
 
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useAuth } from "../hooks/useAuth";
 import * as ImagePicker from "expo-image-picker";
+import * as LocalAuthentication from "expo-local-authentication";
 import {
   ArrowLeft,
   Check,
@@ -302,6 +304,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -342,22 +345,121 @@ export default function ChatSettingsModal({
   onClearChat,
   onBlockUser,
 }: ChatSettingsModalProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [bgType, setBgType] = useState<"color" | "image">("color");
   const [selectedColorId, setSelectedColorId] = useState("bg_default");
   const [customImageUri, setCustomImageUri] = useState<string | null>(null);
 
+  // Lock State
+  const [isLockedLocal, setIsLockedLocal] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [step, setStep] = useState<"enter" | "confirm">("enter");
+
   useEffect(() => {
     if (otherUser?.id) {
       loadBackgroundConfiguration();
+      checkLockStatus();
     }
   }, [otherUser?.id]);
 
+  const checkLockStatus = async () => {
+    const locked = await AsyncStorage.getItem(`chat_locked_${user?.id}_${otherUser.id}`);
+    setIsLockedLocal(locked === "true");
+  };
+
+  const authenticateAndLock = async () => {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Authenticate to lock this chat",
+          fallbackLabel: "Use PIN",
+        });
+
+        if (result.success) {
+          await proceedToLock();
+          return;
+        }
+      }
+
+      // If biometrics fail or not available, check for global PIN
+      const globalPin = await AsyncStorage.getItem(`chat_pin_${user?.id}`);
+      if (!globalPin) {
+        // Start one-time PIN setup
+        setPin("");
+        setConfirmPin("");
+        setStep("enter");
+        setShowPinSetup(true);
+      } else {
+        // Already has PIN, just lock
+        await proceedToLock();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const proceedToLock = async () => {
+    await AsyncStorage.setItem(`chat_locked_${user?.id}_${otherUser.id}`, "true");
+    setIsLockedLocal(true);
+    Alert.alert("Success", "Chat has been locked.");
+  };
+
+  const handleToggleLock = () => {
+    if (isLockedLocal) {
+      // Unlock: just remove it
+      Alert.alert("Unlock Chat", "Are you sure you want to unlock this chat?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Unlock",
+          onPress: async () => {
+            await AsyncStorage.removeItem(`chat_locked_${user?.id}_${otherUser.id}`);
+            setIsLockedLocal(false);
+          },
+        },
+      ]);
+    } else {
+      authenticateAndLock();
+    }
+  };
+
+  const handlePinSubmit = async () => {
+    if (pin.length !== 4) {
+      Alert.alert("Error", "PIN must be 4 digits");
+      return;
+    }
+    setStep("confirm");
+  };
+
+  const handleConfirmPinSubmit = async () => {
+    if (pin !== confirmPin) {
+      Alert.alert("Error", "PINs do not match. Try again.");
+      setPin("");
+      setConfirmPin("");
+      setStep("enter");
+      return;
+    }
+
+    try {
+      // Store User-specific PIN (one time)
+      await AsyncStorage.setItem(`chat_pin_${user?.id}`, pin);
+      await proceedToLock();
+      setShowPinSetup(false);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const loadBackgroundConfiguration = async () => {
     try {
-      const savedType = await AsyncStorage.getItem(`chat_bg_type_${otherUser.id}`);
-      const savedColorId = await AsyncStorage.getItem(`chat_color_id_${otherUser.id}`);
-      const savedImageUri = await AsyncStorage.getItem(`chat_image_uri_${otherUser.id}`);
+      const savedType = await AsyncStorage.getItem(`chat_bg_type_${user?.id}_${otherUser.id}`);
+      const savedColorId = await AsyncStorage.getItem(`chat_color_id_${user?.id}_${otherUser.id}`);
+      const savedImageUri = await AsyncStorage.getItem(`chat_image_uri_${user?.id}_${otherUser.id}`);
 
       if (savedType === "image" && savedImageUri) {
         setBgType("image");
@@ -376,9 +478,9 @@ export default function ChatSettingsModal({
       setBgType("color");
       setSelectedColorId(colorId);
       
-      await AsyncStorage.setItem(`chat_bg_type_${otherUser.id}`, "color");
-      await AsyncStorage.setItem(`chat_color_id_${otherUser.id}`, colorId);
-      await AsyncStorage.setItem(`chat_color_hex_${otherUser.id}`, colorHex);
+      await AsyncStorage.setItem(`chat_bg_type_${user?.id}_${otherUser.id}`, "color");
+      await AsyncStorage.setItem(`chat_color_id_${user?.id}_${otherUser.id}`, colorId);
+      await AsyncStorage.setItem(`chat_color_hex_${user?.id}_${otherUser.id}`, colorHex);
       
       await onUpdateMemberSettings({ chat_theme: colorId });
     } catch (err) {
@@ -406,8 +508,8 @@ export default function ChatSettingsModal({
         setBgType("image");
         setCustomImageUri(pickedUri);
 
-        await AsyncStorage.setItem(`chat_bg_type_${otherUser.id}`, "image");
-        await AsyncStorage.setItem(`chat_image_uri_${otherUser.id}`, pickedUri);
+        await AsyncStorage.setItem(`chat_bg_type_${user?.id}_${otherUser.id}`, "image");
+        await AsyncStorage.setItem(`chat_image_uri_${user?.id}_${otherUser.id}`, pickedUri);
         
         await onUpdateMemberSettings({ chat_theme: "custom_image" });
       } catch (err) {
@@ -419,12 +521,6 @@ export default function ChatSettingsModal({
   const handleTTLSelect = async (ttl: string | null) => {
     setLoading(true);
     await onUpdateSettings({ disappearing_messages_ttl: ttl });
-    setLoading(false);
-  };
-
-  const handleToggleLock = async () => {
-    setLoading(true);
-    await onUpdateMemberSettings({ is_locked: !chatSettings.is_locked });
     setLoading(false);
   };
 
@@ -564,8 +660,8 @@ export default function ChatSettingsModal({
                   <Lock size={18} color="#546E7A" />
                   <Text style={styles.preferenceLabel}>Lock Secure Chat Room</Text>
                 </View>
-                <View style={[styles.toggleSwitch, chatSettings.is_locked && styles.toggleSwitchActive]}>
-                  <View style={[styles.toggleHandle, chatSettings.is_locked && styles.toggleHandleActive]} />
+                <View style={[styles.toggleSwitch, isLockedLocal && styles.toggleSwitchActive]}>
+                  <View style={[styles.toggleHandle, isLockedLocal && styles.toggleHandleActive]} />
                 </View>
               </TouchableOpacity>
             </View>
@@ -593,6 +689,46 @@ export default function ChatSettingsModal({
           </View>
 
         </ScrollView>
+
+        {/* PIN Setup Modal */}
+        <Modal visible={showPinSetup} transparent animationType="fade">
+          <View style={styles.pinModalOverlay}>
+            <View style={styles.pinModalContent}>
+              <Text style={styles.pinModalTitle}>
+                {step === "enter" ? "Set Chat PIN" : "Confirm Chat PIN"}
+              </Text>
+              <Text style={styles.pinModalSub}>Enter a 4-digit PIN to lock this chat</Text>
+              
+              <TextInput
+                style={styles.pinInput}
+                value={step === "enter" ? pin : confirmPin}
+                onChangeText={step === "enter" ? setPin : setConfirmPin}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                autoFocus
+                placeholder="****"
+              />
+
+              <View style={styles.pinModalActions}>
+                <TouchableOpacity 
+                  style={styles.pinCancelBtn} 
+                  onPress={() => setShowPinSetup(false)}
+                >
+                  <Text style={styles.pinCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.pinSubmitBtn} 
+                  onPress={step === "enter" ? handlePinSubmit : handleConfirmPinSubmit}
+                >
+                  <Text style={styles.pinSubmitText}>
+                    {step === "enter" ? "Next" : "Lock Chat"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </Modal>
   );
@@ -681,4 +817,38 @@ const styles = StyleSheet.create({
   toggleSwitchActive: { backgroundColor: "#075E54" },
   toggleHandle: { width: 18, height: 18, borderRadius: 9, backgroundColor: "#FFFFFF" },
   toggleHandleActive: { transform: [{ translateX: 20 }] },
+
+  // PIN Modal Styles
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  pinModalContent: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    alignItems: "center",
+  },
+  pinModalTitle: { fontSize: 20, fontWeight: "700", color: "#111827", marginBottom: 8 },
+  pinModalSub: { fontSize: 14, color: "#6B7280", marginBottom: 24, textAlign: "center" },
+  pinInput: {
+    width: 150,
+    height: 50,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    fontSize: 24,
+    textAlign: "center",
+    letterSpacing: 10,
+    marginBottom: 24,
+    color: "#111827",
+  },
+  pinModalActions: { flexDirection: "row", gap: 12, width: "100%" },
+  pinCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" },
+  pinCancelText: { fontSize: 15, fontWeight: "600", color: "#4B5563" },
+  pinSubmitBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#075E54", alignItems: "center" },
+  pinSubmitText: { fontSize: 15, fontWeight: "600", color: "#FFFFFF" },
 });

@@ -280,7 +280,7 @@ function getInitials(name: string) {
 }
 
 export default function SearchScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -345,11 +345,23 @@ export default function SearchScreen() {
 
     const hideIds = [...blockedIds, ...rejections, user.id, '00000000-0000-0000-0000-000000000000'];
 
-    const { data, error } = await supabase
+    let queryBuilder = supabase
       .from("profiles")
       .select("*")
-      .not("id", "in", `(${hideIds.join(',')})`)
-      .order("full_name", { ascending: true });
+      .not("id", "in", `(${hideIds.join(',')})`);
+
+    if (profile?.is_company_account) {
+      if (profile.company_id) {
+        queryBuilder = queryBuilder.eq("company_id", profile.company_id);
+      } else {
+        setUsers([]);
+        return;
+      }
+    } else {
+      queryBuilder = queryBuilder.eq("is_company_account", false);
+    }
+
+    const { data, error } = await queryBuilder.order("full_name", { ascending: true });
 
     if (error) { console.log(error); return; }
     setUsers(data || []);
@@ -361,12 +373,24 @@ export default function SearchScreen() {
 
     if (!text.trim()) { loadUsers(); return; }
 
-    const { data } = await supabase
+    let queryBuilder = supabase
       .from("profiles")
       .select("*")
       .neq("id", user.id)
       .or(`username.ilike.%${text}%,full_name.ilike.%${text}%,phone.ilike.%${text}%`);
 
+    if (profile?.is_company_account) {
+      if (profile.company_id) {
+        queryBuilder = queryBuilder.eq("company_id", profile.company_id);
+      } else {
+        setUsers([]);
+        return;
+      }
+    } else {
+      queryBuilder = queryBuilder.eq("is_company_account", false);
+    }
+
+    const { data } = await queryBuilder;
     setUsers(data || []);
   };
 

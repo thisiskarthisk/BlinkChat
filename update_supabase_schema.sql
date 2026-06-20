@@ -16,6 +16,13 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- 2. FRIEND REQUESTS ENHANCEMENTS (3-Strike Rule)
 ALTER TABLE friend_requests ADD COLUMN IF NOT EXISTS rejection_count INT DEFAULT 0;
 
+-- 2.1 COMPANY SUPPORT
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_company_admin BOOLEAN DEFAULT FALSE;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_company_account BOOLEAN DEFAULT FALSE;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS push_token TEXT;
+ALTER TABLE profiles DROP COLUMN IF EXISTS company_name;
+ALTER TABLE profiles DROP COLUMN IF EXISTS website;
+
 -- 3. CHAT MANAGEMENT & PRIVACY
 -- Disappearing messages (shared)
 ALTER TABLE chats ADD COLUMN IF NOT EXISTS disappearing_messages_ttl INTERVAL; 
@@ -62,3 +69,64 @@ WITH CHECK (bucket_id = 'chat-media');
 CREATE POLICY "Authenticated Delete" ON storage.objects FOR DELETE 
 TO authenticated 
 USING (bucket_id = 'chat-media');
+
+-- ==========================================
+-- 7. COMPANIES RELATIONSHIPS
+-- ==========================================
+CREATE TABLE IF NOT EXISTS companies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    branch TEXT,
+    city TEXT,
+    state TEXT,
+    pincode TEXT,
+    website TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT companies_name_branch_key UNIQUE (name, branch)
+);
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;
+
+-- Alter queries to handle upgrading an existing database:
+ALTER TABLE companies DROP CONSTRAINT IF EXISTS companies_name_key;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS branch TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS pincode TEXT;
+ALTER TABLE companies ADD CONSTRAINT companies_name_branch_key UNIQUE (name, branch);
+
+-- RPC to allow company admin to update an employee's password at database level
+CREATE OR REPLACE FUNCTION admin_update_user_password(target_user_id UUID, new_password TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE auth.users 
+    SET encrypted_password = crypt(new_password, gen_salt('bf')) 
+    WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC to allow company admin to update an employee's email at database level
+CREATE OR REPLACE FUNCTION admin_update_user_email(target_user_id UUID, new_email TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE auth.users 
+    SET email = new_email 
+    WHERE id = target_user_id;
+    UPDATE public.profiles
+    SET email = new_email
+    WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC to allow company admin to fully delete a user account from auth.users and profiles
+CREATE OR REPLACE FUNCTION admin_delete_user(target_user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    DELETE FROM auth.users WHERE id = target_user_id;
+    DELETE FROM public.profiles WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+

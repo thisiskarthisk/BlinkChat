@@ -1,10 +1,12 @@
 import { supabase } from "../lib/supabase";
+import { sendPushForMessage } from "./pushNotificationService";
 
 /*
 |--------------------------------------------------------------------------
 | Create or Get Existing Private Chat
 |--------------------------------------------------------------------------
 */
+
 
 export async function createOrGetChat(
   currentUserId: string,
@@ -91,6 +93,9 @@ export async function sendMessage(
       });
 
     if (error) throw error;
+
+    // Trigger push notifications asynchronously
+    sendPushForMessage(chatId, senderId, message, "text");
 
     return true;
   } catch (error) {
@@ -347,5 +352,44 @@ export async function getChatDetails(chatId: string, userId: string) {
   } catch (error) {
     console.log("Get Chat Details Error:", error);
     return null;
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Ensure Company Chats exist between a user and all company members
+|--------------------------------------------------------------------------
+*/
+
+export async function ensureCompanyChats(companyIdOrName: string, userId: string) {
+  try {
+    if (!companyIdOrName || !userId) return;
+
+    // Detect if it is UUID (company_id) or TEXT (company_name)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companyIdOrName);
+    
+    let query = supabase.from("profiles").select("id").neq("id", userId);
+    if (isUuid) {
+      query = query.eq("company_id", companyIdOrName);
+    } else {
+      const { data: comp } = await supabase.from("companies").select("id").eq("name", companyIdOrName).maybeSingle();
+      if (comp) {
+        query = query.eq("company_id", comp.id);
+      } else {
+        return;
+      }
+    }
+
+    const { data: profiles, error: profileError } = await query;
+
+    if (profileError) throw profileError;
+    if (!profiles || profiles.length === 0) return;
+
+    // 2. Ensure direct chat exists with each member
+    for (const otherUser of profiles) {
+      await createOrGetChat(userId, otherUser.id);
+    }
+  } catch (error) {
+    console.error("ensureCompanyChats Error:", error);
   }
 }

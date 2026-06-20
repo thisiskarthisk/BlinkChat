@@ -206,6 +206,12 @@ export default function NotificationsScreen() {
     } else if (item.type === "new_request") {
       icon = <MessageSquare size={16} color="#2563EB" />;
       message = "sent you a chat request.";
+    } else if (item.type === "company_broadcast") {
+      const parts = (item.related_id || "").split("|");
+      const compName = parts[0] || "Company";
+      const broadcastMsg = parts[1] || "";
+      icon = <MessageSquare size={16} color="#7C3AED" />;
+      message = `sent a broadcast from ${compName}: "${broadcastMsg}"`;
     }
 
     return (

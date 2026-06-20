@@ -21,10 +21,31 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;       // ← replace
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!; // ← replace
 
+const customStorage = {
+  getItem: async (key: string) => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return AsyncStorage.getItem(key);
+  },
+  setItem: async (key: string, value: string) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    return AsyncStorage.setItem(key, value);
+  },
+  removeItem: async (key: string) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    return AsyncStorage.removeItem(key);
+  },
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
-    // AsyncStorage makes the session survive app close/open
-    storage: AsyncStorage,
+    // customStorage wraps AsyncStorage and avoids SSR crashes
+    storage: customStorage,
     autoRefreshToken: true,
     persistSession: true,     // ← THIS is what keeps users logged in
     detectSessionInUrl: false,

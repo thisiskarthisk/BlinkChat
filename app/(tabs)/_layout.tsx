@@ -1,17 +1,21 @@
 import { Tabs } from 'expo-router';
-import { Home } from 'lucide-react-native';
+import { Home, Settings, LayoutDashboard } from 'lucide-react-native';
+import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function TabLayout() {
+  const { colors } = useTheme();
+  const { profile } = useAuth();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#EFEFF4',
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
           height: 60,
           paddingBottom: 8,
           paddingTop: 4,
@@ -22,12 +26,26 @@ export default function TabLayout() {
         },
       }}
     >
-
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Chats',
           tabBarIcon: ({ size, color }) => <Home size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: 'Dashboard',
+          href: profile?.is_company_admin ? undefined : null,
+          tabBarIcon: ({ size, color }) => <LayoutDashboard size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ size, color }) => <Settings size={size} color={color} />,
         }}
       />
     </Tabs>

@@ -10,7 +10,24 @@ drop table if exists groups cascade;
 drop table if exists messages cascade;
 drop table if exists chat_members cascade;
 drop table if exists chats cascade;
+drop table if exists companies cascade;
 drop table if exists profiles cascade;
+
+-- ==========================================
+-- COMPANIES
+-- ==========================================
+
+create table companies (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    branch text,
+    city text,
+    state text,
+    pincode text,
+    website text,
+    created_at timestamptz default now(),
+    constraint companies_name_branch_key unique (name, branch)
+);
 
 -- ==========================================
 -- PROFILES
@@ -18,23 +35,18 @@ drop table if exists profiles cascade;
 
 create table profiles (
     id uuid primary key,
-
     full_name text not null,
-
     username text unique not null,
-
     email text unique,
-
     phone text unique,
-
     avatar_url text,
-
     status text default 'Hey there!',
-
     is_online boolean default false,
-
     last_seen timestamptz default now(),
-
+    company_id uuid references companies(id) on delete set null,
+    is_company_admin boolean default false,
+    is_company_account boolean default false,
+    push_token text,
     created_at timestamptz default now()
 );
 
@@ -271,4 +283,40 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_path TEXT;
     CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'chat-media');
     CREATE POLICY "Authenticated Upload" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'chat-media');
     CREATE POLICY "Authenticated Delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'chat-media');
+
+-- RPC to allow company admin to update an employee's password at database level
+CREATE OR REPLACE FUNCTION admin_update_user_password(target_user_id UUID, new_password TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE auth.users 
+    SET encrypted_password = crypt(new_password, gen_salt('bf')) 
+    WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC to allow company admin to update an employee's email at database level
+CREATE OR REPLACE FUNCTION admin_update_user_email(target_user_id UUID, new_email TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE auth.users 
+    SET email = new_email 
+    WHERE id = target_user_id;
+    UPDATE public.profiles
+    SET email = new_email
+    WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RPC to allow company admin to fully delete a user account from auth.users and profiles
+CREATE OR REPLACE FUNCTION admin_delete_user(target_user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    DELETE FROM auth.users WHERE id = target_user_id;
+    DELETE FROM public.profiles WHERE id = target_user_id;
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 
