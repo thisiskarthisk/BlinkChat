@@ -21,7 +21,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.abinashm.BlinkChat"
+      "package": "com.company.blinkchatv1",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",

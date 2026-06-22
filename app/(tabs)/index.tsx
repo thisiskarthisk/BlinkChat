@@ -518,13 +518,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { router, useFocusEffect } from "expo-router";
-import { Bell, ChevronRight, Lock, LogOut, Search, SquarePen, X, AlertTriangle, Download } from "lucide-react-native";
-import React, { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Bell, ChevronRight, Lock, LogOut, Search, SquarePen, X } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
+  Platform,
   RefreshControl,
   StatusBar,
   StyleSheet,
@@ -533,16 +534,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useAuth } from "../../hooks/useAuth";
+import WebSplitScreenLayout from "../../components/WebSplitScreenLayout";
 import { useTheme } from "../../hooks/use-theme";
+import { useAuth } from "../../hooks/useAuth";
 import { supabase } from "../../lib/supabase";
 import { markAllMessagesDelivered } from "../../services/chatService";
 import {
-  getCachedMessages,
-  syncAndCleanupSupabase,
-  checkAutoDeletePolicy,
-  backupAllData,
   AutoDeleteInfo,
+  checkAutoDeletePolicy,
+  getCachedMessages,
+  syncAndCleanupSupabase
 } from "../../services/storageService";
 
 function getInitials(name: string) {
@@ -591,7 +592,11 @@ function getAvatarColor(name: string) {
 }
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+
+  if (Platform.OS === "web") {
+    return <WebSplitScreenLayout />;
+  }
   const { colors } = useTheme();
   const [chats, setChats] = useState<any[]>([]);
   const [filteredChats, setFilteredChats] = useState<any[]>([]);
@@ -711,6 +716,11 @@ export default function HomeScreen() {
       setLockedChats(lockedResult);
       applySearch(result, search);
       loadRequests();
+      
+      // Save to local cache for instant loading
+      if (user?.id) {
+        await AsyncStorage.setItem(`cached_chats_${user.id}`, JSON.stringify(result));
+      }
     } catch (err) {
       console.log("loadChats error:", err);
     } finally {
@@ -821,6 +831,25 @@ export default function HomeScreen() {
     }, [loadChats])
   );
 
+  // Load cached chats on mount
+  useEffect(() => {
+    const loadCachedChats = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(`cached_chats_${user?.id}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setChats(parsed);
+          applySearch(parsed, search);
+        }
+      } catch (e) {
+        console.log("Error loading cached chats:", e);
+      }
+    };
+    if (user?.id) {
+      loadCachedChats();
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     const channel = supabase
       .channel("home-realtime")
@@ -847,14 +876,7 @@ export default function HomeScreen() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          if (user?.id) {
-            await supabase
-              .from("profiles")
-              .update({ is_online: false, last_seen: new Date().toISOString() })
-              .eq("id", user.id);
-          }
-          await supabase.auth.signOut();
-          // _layout.tsx auth listener handles redirect
+          await signOut();
         },
       },
     ]);
@@ -966,24 +988,7 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Auto Delete Warning Banner */}
-      {autoDeleteInfo?.enabled && autoDeleteInfo.triggerWarning && (
-        <View style={[styles.warningBanner, { backgroundColor: colors.error + "15", borderColor: colors.error }]}>
-          <AlertTriangle size={20} color={colors.error} style={{ marginRight: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.warningBannerTitle, { color: colors.error }]}>Auto-Deletion Tomorrow</Text>
-            <Text style={[styles.warningBannerText, { color: colors.text }]}>
-              {autoDeleteInfo.warningText}
-            </Text>
-            <Text style={[styles.warningBannerCountdown, { color: colors.error }]}>
-              Countdown: {countdownText}
-            </Text>
-          </View>
-          <TouchableOpacity style={[styles.warningBannerBackupBtn, { backgroundColor: colors.accent }]} onPress={() => backupAllData(user?.id || "")}>
-            <Download size={14} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-      )}
+
 
       {/* Locked Chats Entry */}
       {(lockedChats.length > 0 || showLockedSection) && (
@@ -1000,7 +1005,7 @@ export default function HomeScreen() {
       )}
 
       {/* Chat List */}
-      {loading ? (
+      {chats.length === 0 && loading ? (
         <View style={styles.emptyState}>
           <ActivityIndicator size="large" color="#2563EB" />
         </View>
@@ -1075,6 +1080,17 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+      {/* Floating Timer Icon */}
+      {autoDeleteInfo?.enabled && autoDeleteInfo.triggerWarning && (
+        <TouchableOpacity
+          style={styles.floatingTimer}
+          onPress={() => router.push("/notifications")}
+          activeOpacity={0.9}
+        >
+          <AlertTriangle size={16} color="#FFF" style={{ marginRight: 6 }} />
+          <Text style={styles.floatingTimerText}>{countdownText}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -1370,35 +1386,26 @@ const styles = StyleSheet.create({
   pinCancelText: { fontSize: 15, fontWeight: "600", color: "#4B5563" },
   pinSubmitBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#075E54", alignItems: "center" },
   pinSubmitText: { fontSize: 15, fontWeight: "600", color: "#FFFFFF" },
-  warningBanner: {
+  floatingTimer: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    backgroundColor: "#EF4444",
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    borderWidth: 1,
+    shadowColor: "#EF4444",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 999,
   },
-  warningBannerTitle: {
+  floatingTimerText: {
+    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
-    marginBottom: 2,
-  },
-  warningBannerText: {
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 4,
-  },
-  warningBannerCountdown: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  warningBannerBackupBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 10,
   },
 });

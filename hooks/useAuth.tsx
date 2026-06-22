@@ -9,7 +9,8 @@
 
 import { Session, User } from "@supabase/supabase-js";
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import { AppState, AppStateStatus } from "react-native";
+import { AppState, AppStateStatus, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { markAllMessagesDelivered } from "../services/chatService";
 import { registerForPushNotificationsAsync } from "../services/pushNotificationService";
@@ -207,7 +208,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         last_seen: new Date().toISOString(),
       }).eq("id", user.id);
     }
-    await supabase.auth.signOut();
+    if (Platform.OS === 'web') {
+      try {
+        await AsyncStorage.removeItem("device_session_token");
+        const keys = await AsyncStorage.getAllKeys();
+        for (const key of keys) {
+          if (key.includes('auth-token') || key.startsWith('sb-') || key.includes('supabase')) {
+            await AsyncStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        console.warn("Error clearing AsyncStorage on web logout:", e);
+      }
+      window.location.reload();
+    } else {
+      await supabase.auth.signOut();
+    }
   };
 
   const updateProfile = (updated: Partial<Profile>) => {

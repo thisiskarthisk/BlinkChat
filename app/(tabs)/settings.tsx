@@ -13,10 +13,12 @@ import {
   ActivityIndicator,
   FlatList,
   Dimensions,
+  Platform,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   User,
   Settings,
@@ -36,6 +38,7 @@ import {
   Trash2,
   Lock,
   LayoutDashboard,
+  QrCode,
 } from "lucide-react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
@@ -62,7 +65,7 @@ export default function SettingsScreen() {
   const [autoDeleteInfo, setAutoDeleteInfo] = useState<AutoDeleteInfo | null>(null);
   const [autoDeleteEnabled, setAutoDeleteEnabled] = useState(false);
   const [autoDeleteDays, setAutoDeleteDays] = useState(7);
-  const [countdownText, setCountdownText] = useState("");
+
 
   // PIN & Privacy state
   const [chatPin, setChatPin] = useState("");
@@ -99,6 +102,160 @@ export default function SettingsScreen() {
   const [newEmployeePassword, setNewEmployeePassword] = useState("");
   const [newEmployeeFullName, setNewEmployeeFullName] = useState("");
   const [newEmployeeUsername, setNewEmployeeUsername] = useState("");
+
+  // Camera & Link Device states
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [showScanner, setShowScanner] = useState(false);
+  const scannerScannedRef = useRef(false);
+
+  // Linked Devices states
+  const [linkedDevices, setLinkedDevices] = useState<any[]>([]);
+  const [showLinkedDevicesModal, setShowLinkedDevicesModal] = useState(false);
+  const [loadingDevices, setLoadingDevices] = useState(false);
+
+  const loadLinkedDevices = async () => {
+    if (!user?.id) return;
+    setLoadingDevices(true);
+    try {
+      const { data, error } = await supabase
+        .from("device_links")
+        .select("*")
+        .eq("user_id", user.id)
+        .not("access_token", "is", null);
+      if (data) {
+        setLinkedDevices(data);
+      }
+    } catch (e) {
+      console.log("loadLinkedDevices error:", e);
+    } finally {
+      setLoadingDevices(false);
+    }
+  };
+
+  const handleLogoutDevice = async (deviceId: string) => {
+    try {
+      const deviceToLogout = linkedDevices.find(d => d.id === deviceId);
+
+      const { error } = await supabase
+        .from("device_links")
+        .delete()
+        .eq("id", deviceId);
+      if (error) throw error;
+      
+      // Broadcast logout event to the specific device
+      if (deviceToLogout?.session_token) {
+        const logoutChannel = supabase.channel(`device-logout-channel-${deviceToLogout.session_token}`);
+        logoutChannel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            logoutChannel.send({
+              type: 'broadcast',
+              event: 'logout',
+              payload: { message: 'remote_logout' }
+            }).then(() => {
+              supabase.removeChannel(logoutChannel);
+            });
+          }
+        });
+      }
+
+      // Update state locally
+      setLinkedDevices(prev => prev.filter(d => d.id !== deviceId));
+      Alert.alert("Success", "Device logged out successfully.");
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to logout device.");
+    }
+  };
+
+  const handleBarcodeScanned = async ({ data }: { data: string }) => {
+    if (scannerScannedRef.current) return;
+    scannerScannedRef.current = true;
+
+    const token = data.trim();
+    if (!token) {
+      Alert.alert("Error", "Invalid QR code scanned.");
+      scannerScannedRef.current = false;
+      return;
+    }
+
+    setLoading(true);
+    console.log("Mobile starting barcode scanned handler with token:", token);
+    try {
+      // 1. Force refresh the session on mobile to get a brand new, unused token pair
+      console.log("Refreshing mobile session...");
+      try {
+        const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr) {
+          console.warn("Mobile session refresh failed on scan:", refreshErr.message);
+          Alert.alert("Link Failed", "Your phone session could not be refreshed. Please log out of the mobile app and log back in, then try again.");
+          scannerScannedRef.current = false;
+          setLoading(false);
+          return;
+        } else {
+          console.log("Mobile session refresh successful.");
+        }
+      } catch (e) {
+        console.warn("Mobile session refresh exception:", e);
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        Alert.alert("Error", "No active session found.");
+        scannerScannedRef.current = false;
+        return;
+      }
+
+      console.log("Mobile session tokens obtained. Access token length:", session.access_token?.length);
+
+      // Update the device link row with the user session
+      const { data: updated, error } = await supabase
+        .from("device_links")
+        .update({
+          user_id: user?.id,
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        })
+        .eq("session_token", token)
+        .select();
+
+      if (error) {
+        console.error("Error updating device_links:", error);
+        Alert.alert("Update Error", error.message);
+        scannerScannedRef.current = false;
+      } else if (!updated || updated.length === 0) {
+        console.warn("No rows updated in device_links. Token might be invalid or expired.");
+        Alert.alert("Link Failed", "This QR code is invalid or has expired. Please refresh the page on your web browser and scan again.");
+        scannerScannedRef.current = false;
+      } else {
+        console.log("device_links updated successfully, rows updated:", updated.length);
+        Alert.alert("Success", "Device linked successfully!");
+        setShowScanner(false);
+        loadLinkedDevices();
+      }
+    } catch (e: any) {
+      console.error("Link exception:", e);
+      Alert.alert("Error", e.message || "Could not link device.");
+      scannerScannedRef.current = false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenScanner = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert("Not Supported", "Device linking scanning is only supported on mobile devices.");
+      return;
+    }
+    
+    if (!cameraPermission?.granted) {
+      const res = await requestCameraPermission();
+      if (!res.granted) {
+        Alert.alert("Camera Permission Required", "Please allow camera access in your device settings to scan QR codes.");
+        return;
+      }
+    }
+    scannerScannedRef.current = false;
+    setShowScanner(true);
+  };
 
   // Load configuration
   const loadConfig = async () => {
@@ -144,34 +301,7 @@ export default function SettingsScreen() {
     }, [user?.id, profile])
   );
 
-  // Auto-delete warning ticking countdown
-  useEffect(() => {
-    if (!autoDeleteInfo?.enabled || autoDeleteInfo.timeLeftMs <= 0) {
-      setCountdownText("");
-      return;
-    }
 
-    let remaining = autoDeleteInfo.timeLeftMs;
-    const interval = setInterval(() => {
-      remaining -= 1000;
-      if (remaining <= 0) {
-        clearInterval(interval);
-        loadConfig();
-      } else {
-        const d = Math.floor(remaining / (24 * 60 * 60 * 1000));
-        const h = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-        const m = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-        const s = Math.floor((remaining % (60 * 1000)) / 1000);
-        
-        let label = "";
-        if (d > 0) label += `${d}d `;
-        label += `${h}h ${m}m ${s}s`;
-        setCountdownText(label);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [autoDeleteInfo]);
 
   // Load company employees
   const loadCompanyUsers = async (compIdOrName: string) => {
@@ -626,25 +756,7 @@ export default function SettingsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* Retention Policy Ticking Alert Warning */}
-        {autoDeleteInfo?.enabled && autoDeleteInfo.triggerWarning && (
-          <View style={[styles.warningBanner, { backgroundColor: colors.error + "20", borderColor: colors.error }]}>
-            <AlertTriangle size={22} color={colors.error} style={{ marginRight: 10 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.warningTitle, { color: colors.error }]}>Data Purge Warning</Text>
-              <Text style={[styles.warningDesc, { color: colors.text }]}>
-                {autoDeleteInfo.warningText}
-              </Text>
-              <Text style={[styles.countdown, { color: colors.error }]}>
-                Time Remaining: {countdownText}
-              </Text>
-              <TouchableOpacity style={[styles.warningBackupBtn, { backgroundColor: colors.accent }]} onPress={handleBackup}>
-                <Download size={14} color="#FFF" style={{ marginRight: 6 }} />
-                <Text style={styles.warningBackupText}>Backup Chats Now</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+
 
         {/* Profile Card Section */}
         <View style={[styles.profileSection, { backgroundColor: colors.surface }]}>
@@ -741,7 +853,7 @@ export default function SettingsScreen() {
             <View style={styles.daysSelectorSection}>
               <Text style={[styles.daysSelectorLabel, { color: colors.text }]}>Retention Period</Text>
               <View style={styles.daysContainer}>
-                {[3, 7, 15, 30].map((d) => {
+                {[1, 3, 7, 15, 30].map((d) => {
                   const active = autoDeleteDays === d;
                   return (
                     <TouchableOpacity
@@ -753,7 +865,7 @@ export default function SettingsScreen() {
                       onPress={() => handleChangeDays(d)}
                     >
                       <Text style={[styles.dayChipText, { color: active ? "#FFF" : colors.text }]}>
-                        {d} Days
+                        {d === 1 ? "24 Hours" : `${d} Days`}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -802,9 +914,9 @@ export default function SettingsScreen() {
           {/* PIN Setup */}
           <TouchableOpacity style={styles.settingRow} onPress={() => setShowPinSetupModal(true)}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>Change Global PIN</Text>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Setup/Change Chat Lock PIN</Text>
               <Text style={[styles.settingSub, { color: colors.textSecondary }]}>
-                {chatPin ? "4-digit PIN is active" : "No global PIN configured"}
+                {chatPin ? "4-digit backup PIN is active" : "Configure backup PIN for locked chats"}
               </Text>
             </View>
             <Lock size={18} color={colors.textSecondary} />
@@ -825,6 +937,19 @@ export default function SettingsScreen() {
               trackColor={{ true: colors.accent + "50", false: "#eee" }}
             />
           </View>
+
+          {/* Link Device */}
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity style={styles.settingRow} onPress={() => { loadLinkedDevices(); setShowLinkedDevicesModal(true); }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.settingLabel, { color: colors.text }]}>Link Web/Desktop Device</Text>
+                <Text style={[styles.settingSub, { color: colors.textSecondary }]}>
+                  Manage linked browsers and scan new devices
+                </Text>
+              </View>
+              <QrCode size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Business/Company Settings Section (Only visible for Company accounts, hidden for admin since they have dedicated dashboard tab) */}
@@ -1192,6 +1317,129 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Linked Devices Manager Modal */}
+      {Platform.OS !== 'web' && (
+        <Modal
+          visible={showLinkedDevicesModal}
+          animationType="slide"
+          onRequestClose={() => {
+            if (showScanner) {
+              setShowScanner(false);
+            } else {
+              setShowLinkedDevicesModal(false);
+            }
+          }}
+        >
+          <View style={[styles.devicesModalContainer, { backgroundColor: colors.background }]}>
+            {showScanner ? (
+              <View style={styles.scannerModalContainer}>
+                <View style={styles.scannerHeader}>
+                  <Text style={styles.scannerTitle}>Scan QR Code</Text>
+                  <TouchableOpacity onPress={() => setShowScanner(false)} style={styles.scannerCloseBtn}>
+                    <X size={24} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.scannerViewContainer}>
+                  <CameraView
+                    style={StyleSheet.absoluteFillObject}
+                    onBarcodeScanned={handleBarcodeScanned}
+                    barcodeScannerSettings={{
+                      barcodeTypes: ["qr"],
+                    }}
+                  />
+                  {/* Target Frame Overlay */}
+                  <View style={styles.scannerOverlayFrame}>
+                    <View style={styles.scanTargetSquare} />
+                  </View>
+                  <Text style={styles.scannerTipText}>
+                    Center the QR code on your computer screen within the frame.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={[styles.devicesHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+                  <Text style={[styles.devicesTitle, { color: colors.text }]}>Linked Devices</Text>
+                  <TouchableOpacity onPress={() => setShowLinkedDevicesModal(false)} style={styles.devicesCloseBtn}>
+                    <X size={24} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.devicesBanner}>
+                  <Text style={styles.devicesBannerEmoji}>💻</Text>
+                  <Text style={[styles.devicesBannerText, { color: colors.text }]}>Use BlinkChat on other devices</Text>
+                  <Text style={[styles.devicesBannerSub, { color: colors.textSecondary }]}>
+                    Link up to 4 web sessions simultaneously to keep chatting on desktop.
+                  </Text>
+                </View>
+
+                <View style={[styles.sectionTitleRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.devicesListTitle, { color: colors.textSecondary }]}>YOUR LINKED DEVICES</Text>
+                </View>
+
+                {loadingDevices ? (
+                  <View style={styles.devicesCenter}>
+                    <ActivityIndicator size="large" color={colors.accent} />
+                  </View>
+                ) : linkedDevices.length === 0 ? (
+                  <View style={styles.devicesCenter}>
+                    <Text style={[styles.devicesEmptyText, { color: colors.textSecondary }]}>No devices linked yet</Text>
+                  </View>
+                ) : (
+                  <ScrollView contentContainerStyle={styles.devicesListContainer}>
+                    {linkedDevices.map((device) => (
+                      <View key={device.id} style={[styles.deviceItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={[styles.deviceIconBg, { backgroundColor: colors.backgroundSelected }]}>
+                          <Text style={{ fontSize: 22 }}>🌐</Text>
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={[styles.deviceName, { color: colors.text }]}>{device.device_name || "Web Browser"}</Text>
+                          <Text style={[styles.deviceLinkedTime, { color: colors.textSecondary }]}>
+                            Linked: {new Date(device.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert(
+                              "Log out device?",
+                              "Are you sure you want to log out this browser session?",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                { text: "Log Out", style: "destructive", onPress: () => handleLogoutDevice(device.id) }
+                              ]
+                            );
+                          }}
+                          style={styles.deviceLogoutBtn}
+                        >
+                          <LogOut size={20} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
+
+                <View style={[styles.devicesFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+                  <TouchableOpacity
+                    style={[styles.linkBtn, { backgroundColor: colors.accent }]}
+                    onPress={() => {
+                      if (linkedDevices.length >= 4) {
+                        Alert.alert("Limit Reached", "You can link a maximum of 4 devices. Please log out of a device to link a new one.");
+                        return;
+                      }
+                      handleOpenScanner();
+                    }}
+                  >
+                    <Plus size={20} color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.linkBtnText}>Link a Device</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -1767,5 +2015,169 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     alignItems: "center",
     justifyContent: "center",
+  },
+  scannerModalContainer: {
+    flex: 1,
+    backgroundColor: "#0F172A",
+  },
+  scannerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 50,
+    paddingBottom: 20,
+    backgroundColor: "#1E293B",
+  },
+  scannerTitle: {
+    color: "#FFF",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  scannerCloseBtn: {
+    padding: 6,
+  },
+  scannerViewContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  scannerOverlayFrame: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+  },
+  scanTargetSquare: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: "#3B82F6",
+    backgroundColor: "transparent",
+    borderRadius: 24,
+  },
+  scannerTipText: {
+    position: "absolute",
+    bottom: 80,
+    left: 40,
+    right: 40,
+    color: "#FFF",
+    textAlign: "center",
+    fontSize: 14,
+    fontWeight: "500",
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  devicesModalContainer: {
+    flex: 1,
+  },
+  devicesHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 50,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+  },
+  devicesTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  devicesCloseBtn: {
+    padding: 4,
+  },
+  devicesBanner: {
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "rgba(37, 99, 235, 0.03)",
+  },
+  devicesBannerEmoji: {
+    fontSize: 54,
+    marginBottom: 16,
+  },
+  devicesBannerText: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  devicesBannerSub: {
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+  },
+  sectionTitleRow: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  devicesListTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  devicesCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+  },
+  devicesEmptyText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  devicesListContainer: {
+    padding: 16,
+    gap: 12,
+  },
+  deviceItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  deviceIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deviceName: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  deviceLinkedTime: {
+    fontSize: 11,
+  },
+  deviceLogoutBtn: {
+    padding: 10,
+  },
+  devicesFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+  },
+  linkBtn: {
+    flexDirection: "row",
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  linkBtnText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

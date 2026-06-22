@@ -196,9 +196,13 @@ export async function checkAutoDeletePolicy(userId: string): Promise<AutoDeleteI
     };
   }
 
-  const startTime = new Date(startTimeStr).getTime();
+  const startDate = new Date(startTimeStr);
+  const expirationDate = new Date(startDate);
+  expirationDate.setDate(startDate.getDate() + days);
+  expirationDate.setHours(1, 0, 0, 0); // Align deletion to exactly 1:00 AM local time of expiration day
+
+  const expirationTime = expirationDate.getTime();
   const policyDurationMs = days * 24 * 60 * 60 * 1000;
-  const expirationTime = startTime + policyDurationMs;
   const now = new Date().getTime();
   const timeLeftMs = expirationTime - now;
 

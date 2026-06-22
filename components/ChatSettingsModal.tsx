@@ -372,6 +372,18 @@ export default function ChatSettingsModal({
 
   const authenticateAndLock = async () => {
     try {
+      // 1. Ensure backup PIN is set up first
+      const globalPin = await AsyncStorage.getItem(`chat_pin_${user?.id}`);
+      if (!globalPin) {
+        // Start one-time PIN setup first
+        setPin("");
+        setConfirmPin("");
+        setStep("enter");
+        setShowPinSetup(true);
+        return;
+      }
+
+      // 2. PIN is set up, directly show biometrics (Face ID/fingerprint) if available
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
@@ -387,18 +399,19 @@ export default function ChatSettingsModal({
         }
       }
 
-      // If biometrics fail or not available, check for global PIN
-      const globalPin = await AsyncStorage.getItem(`chat_pin_${user?.id}`);
-      if (!globalPin) {
-        // Start one-time PIN setup
-        setPin("");
-        setConfirmPin("");
-        setStep("enter");
-        setShowPinSetup(true);
-      } else {
-        // Already has PIN, just lock
-        await proceedToLock();
-      }
+      // 3. Fallback to verifying PIN to lock if biometrics fail or not available
+      Alert.prompt(
+        "Confirm Chat Lock",
+        "Enter your 4-digit Chat Lock PIN to secure this chat",
+        async (enteredPin) => {
+          if (enteredPin === globalPin) {
+            await proceedToLock();
+          } else {
+            Alert.alert("Error", "Incorrect PIN");
+          }
+        },
+        "secure-text"
+      );
     } catch (e) {
       console.error(e);
     }
@@ -446,8 +459,27 @@ export default function ChatSettingsModal({
     }
 
     try {
-      // Store User-specific PIN (one time)
+      // Store User-specific PIN (backup)
       await AsyncStorage.setItem(`chat_pin_${user?.id}`, pin);
+
+      // Proceed to authenticate with biometrics to complete the lock
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Authenticate to lock this chat",
+          fallbackLabel: "Use PIN",
+        });
+
+        if (result.success) {
+          await proceedToLock();
+          setShowPinSetup(false);
+          return;
+        }
+      }
+
+      // Otherwise, lock directly (user just set their PIN)
       await proceedToLock();
       setShowPinSetup(false);
     } catch (e) {

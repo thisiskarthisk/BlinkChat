@@ -28,11 +28,16 @@ function RootNav() {
     if (loading) return;
 
     const inAuth = segments[0] === "(auth)";
+    const isRoot = !segments[0];
 
     if (session) {
-      if (inAuth) router.replace("/(tabs)");
+      if (inAuth || isRoot) {
+        router.replace("/(tabs)");
+      }
     } else {
-      if (!inAuth) router.replace("/(auth)/login");
+      if (!inAuth) {
+        router.replace("/(auth)/login");
+      }
     }
 
     SplashScreen.hideAsync().catch(() => {});

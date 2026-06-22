@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Home, Settings, LayoutDashboard } from 'lucide-react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/hooks/useAuth';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -19,6 +20,7 @@ export default function TabLayout() {
           height: 60,
           paddingBottom: 8,
           paddingTop: 4,
+          display: Platform.OS === 'web' ? 'none' : 'flex',
         },
         tabBarLabelStyle: {
           fontSize: 12,

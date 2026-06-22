@@ -130,3 +130,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- ==========================================
+-- 8. LINK DEVICE SYSTEM (QR CODE LOGIN)
+-- ==========================================
+CREATE TABLE IF NOT EXISTS device_links (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_token TEXT NOT NULL UNIQUE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    device_name TEXT DEFAULT 'Web Browser',
+    access_token TEXT,
+    refresh_token TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE device_links ADD COLUMN IF NOT EXISTS device_name TEXT DEFAULT 'Web Browser';
+
+-- Enable RLS
+ALTER TABLE device_links ENABLE ROW LEVEL SECURITY;
+
+-- Allow public actions for device link synchronization
+DROP POLICY IF EXISTS "Allow public insert" ON device_links;
+CREATE POLICY "Allow public insert" ON device_links FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public select" ON device_links;
+CREATE POLICY "Allow public select" ON device_links FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow public update" ON device_links;
+CREATE POLICY "Allow public update" ON device_links FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Allow public delete" ON device_links;
+CREATE POLICY "Allow public delete" ON device_links FOR DELETE USING (true);
+
+-- Enable Realtime for device_links
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' AND tablename = 'device_links'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE device_links;
+    END IF;
+END $$;
+

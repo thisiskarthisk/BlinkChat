@@ -1216,6 +1216,12 @@ export default function ChatScreen() {
               if (blocked) return; // Do not show message if blocked
             }
 
+            // Perform markDelivered and markSeen outside the state updater function!
+            if (payload.new.sender_id !== user?.id) {
+              await markDelivered(payload.new.id);
+              await markSeen();
+            }
+
             setMessages((prev) => {
               const existingIndex = prev.findIndex((m) => 
                 m.id === payload.new.id || 
@@ -1224,12 +1230,6 @@ export default function ChatScreen() {
                  m.message_type === payload.new.message_type &&
                  String(m.id).startsWith("temp_"))
               );
-              
-              if (payload.new.sender_id !== user?.id) {
-                // If we are the recipient, mark as delivered (and seen if we are in chat)
-                markDelivered(payload.new.id);
-                markSeen();
-              }
 
               if (existingIndex !== -1) {
                 const updated = [...prev];
@@ -1282,6 +1282,10 @@ export default function ChatScreen() {
             .maybeSingle();
 
           if (blocked) return;
+
+          // Call markDelivered and markSeen to mark received broadcast message as read!
+          await markDelivered(newMsg.id);
+          await markSeen();
 
           setMessages((prev) => {
             if (prev.find((m) => m.id === newMsg.id || (newMsg.tempId && m.id === newMsg.tempId))) {

@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { ArrowLeft, BellOff, MessageSquare, Trash2, UserCheck, UserX } from "lucide-react-native";
+import { ArrowLeft, BellOff, MessageSquare, Trash2, UserCheck, UserX, AlertTriangle, Download } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import {
   markNotificationsRead,
   rejectFriendRequest,
 } from "../../services/friendService";
+import { checkAutoDeletePolicy, backupAllData, AutoDeleteInfo } from "../../services/storageService";
 
 function formatRelativeTime(isoString: string) {
   const date = new Date(isoString);
@@ -42,6 +43,10 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actioningId, setActioningId] = useState<number | null>(null);
+  
+  // Auto-delete state
+  const [autoDeleteInfo, setAutoDeleteInfo] = useState<AutoDeleteInfo | null>(null);
+  const [countdownText, setCountdownText] = useState("");
 
   useEffect(() => {
     loadAll();
@@ -68,16 +73,57 @@ export default function NotificationsScreen() {
   const loadAll = async () => {
     if (!user?.id) return;
     setLoading(true);
-    const [reqs, notifs] = await Promise.all([
+    const [reqs, notifs, deleteInfo] = await Promise.all([
       getPendingRequests(user.id),
       getNotifications(user.id),
+      checkAutoDeletePolicy(user.id),
     ]);
     setRequests(reqs || []);
     setNotifications(notifs || []);
+    setAutoDeleteInfo(deleteInfo || null);
     setLoading(false);
 
     if (notifs && notifs.some((n) => !n.is_read)) {
       await markNotificationsRead(user.id);
+    }
+  };
+
+  // Auto-delete warning ticking countdown
+  useEffect(() => {
+    if (!autoDeleteInfo?.enabled || autoDeleteInfo.timeLeftMs <= 0) {
+      setCountdownText("");
+      return;
+    }
+
+    let remaining = autoDeleteInfo.timeLeftMs;
+    const interval = setInterval(() => {
+      remaining -= 1000;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        loadAll();
+      } else {
+        const d = Math.floor(remaining / (24 * 60 * 60 * 1000));
+        const h = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+        const m = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
+        const s = Math.floor((remaining % (60 * 1000)) / 1000);
+        
+        let label = "";
+        if (d > 0) label += `${d}d `;
+        label += `${h}h ${m}m ${s}s`;
+        setCountdownText(label);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [autoDeleteInfo]);
+
+  const handleBackup = async () => {
+    if (!user?.id) return;
+    const success = await backupAllData(user.id);
+    if (success) {
+      Alert.alert("Success", "Backup generated successfully!");
+    } else {
+      Alert.alert("Error", "Failed to generate backup.");
     }
   };
 
@@ -270,6 +316,21 @@ export default function NotificationsScreen() {
           </TouchableOpacity>
         )}
       </View>
+      
+      {/* Auto-Delete Warning Banner */}
+      {autoDeleteInfo?.enabled && autoDeleteInfo.triggerWarning && (
+        <View style={styles.warningBanner}>
+          <AlertTriangle size={22} color="#EF4444" style={{ marginRight: 12 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.warningTitle}>Data Purge Warning</Text>
+            <Text style={styles.warningDesc}>{autoDeleteInfo.warningText}</Text>
+            <Text style={styles.countdown}>Time Remaining: {countdownText}</Text>
+          </View>
+          <TouchableOpacity style={styles.warningBackupBtn} onPress={handleBackup}>
+            <Download size={16} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.center}>
@@ -460,5 +521,42 @@ const styles = StyleSheet.create({
     padding: 8,
     marginLeft: 4,
     borderRadius: 8,
+  },
+  warningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  warningTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#991B1B",
+    marginBottom: 2,
+  },
+  warningDesc: {
+    fontSize: 13,
+    color: "#7F1D1D",
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  countdown: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#B91C1C",
+  },
+  warningBackupBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
   },
 });

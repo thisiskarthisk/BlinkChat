@@ -1,184 +1,11 @@
-// import { COLORS } from "@/constants/colors";
-// import { useState } from "react";
-// import {
-//   Alert,
-//   StyleSheet,
-//   Text,
-//   TextInput,
-//   TouchableOpacity,
-//   View,
-// } from "react-native";
-// import { supabase } from "../../lib/supabase";
-
-// export default function RegisterScreen() {
-//   const [fullName, setFullName] = useState("");
-//   const [username, setUsername] = useState("");
-//   const [phone, setPhone] = useState("");
-//   const [email, setEmail] = useState("");
-//   const [password, setPassword] = useState("");
-//   const [loading, setLoading] = useState(false);
-
-//   const signUp = async () => {
-//     if (
-//       !fullName ||
-//       !username ||
-//       !phone ||
-//       !email ||
-//       !password
-//     ) {
-//       Alert.alert("Error", "Please fill all fields");
-//       return;
-//     }
-
-//     try {
-//       setLoading(true);
-
-//       const { data, error } = await supabase.auth.signUp({
-//         email,
-//         password,
-//       });
-
-//       if (error) {
-//         Alert.alert("Signup Failed", error.message);
-//         return;
-//       }
-
-//       if (data.user) {
-//         const { error: profileError } = await supabase
-//           .from("profiles")
-//           .insert({
-//             id: data.user.id,
-//             full_name: fullName,
-//             username,
-//             phone,
-//             email,
-//           });
-
-//         if (profileError) {
-//           Alert.alert("Profile Error", profileError.message);
-//           return;
-//         }
-
-//         Alert.alert(
-//           "Success",
-//           "Account created successfully"
-//         );
-
-//         setFullName("");
-//         setUsername("");
-//         setPhone("");
-//         setEmail("");
-//         setPassword("");
-//       }
-//     } catch (err: any) {
-//       Alert.alert("Error", err.message);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   return (
-//     <View style={styles.container}>
-//       <Text style={styles.title}>Create Account</Text>
-
-//       <TextInput
-//         style={styles.input}
-//         placeholder="Full Name"
-//         value={fullName}
-//         onChangeText={setFullName}
-//       />
-
-//       <TextInput
-//         style={styles.input}
-//         placeholder="Username"
-//         value={username}
-//         onChangeText={setUsername}
-//       />
-
-//       <TextInput
-//         style={styles.input}
-//         placeholder="Phone Number"
-//         keyboardType="phone-pad"
-//         value={phone}
-//         onChangeText={setPhone}
-//       />
-
-//       <TextInput
-//         style={styles.input}
-//         placeholder="Email"
-//         keyboardType="email-address"
-//         autoCapitalize="none"
-//         value={email}
-//         onChangeText={setEmail}
-//       />
-
-//       <TextInput
-//         style={styles.input}
-//         placeholder="Password"
-//         secureTextEntry
-//         value={password}
-//         onChangeText={setPassword}
-//       />
-
-//       <TouchableOpacity
-//         style={styles.button}
-//         onPress={signUp}
-//         disabled={loading}
-//       >
-//         <Text style={styles.buttonText}>
-//           {loading ? "Creating..." : "Sign Up"}
-//         </Text>
-//       </TouchableOpacity>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//   flex: 1,
-//   justifyContent: "center",
-//   padding: 20,
-//   backgroundColor: COLORS.background,
-// },
-
-// title: {
-//   fontSize: 30,
-//   fontWeight: "bold",
-//   textAlign: "center",
-//   color: COLORS.text,
-//   marginBottom: 30,
-// },
-
-// input: {
-//   backgroundColor: COLORS.card,
-//   borderWidth: 1,
-//   borderColor: COLORS.border,
-//   borderRadius: 12,
-//   padding: 14,
-//   marginBottom: 15,
-// },
-
-// button: {
-//   backgroundColor: COLORS.primary,
-//   padding: 15,
-//   borderRadius: 12,
-//   alignItems: "center",
-// },
-
-// buttonText: {
-//   color: "#fff",
-//   fontWeight: "bold",
-//   fontSize: 16,
-// },
-// });
-
-
 
 import { router } from "expo-router";
+import { ArrowLeft, AtSign, Building, Check, Eye, EyeOff, Globe, Lock, Mail, Phone, User, UserPlus } from "lucide-react-native";
 import { useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -186,10 +13,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Modal,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
-import { User, AtSign, Phone, Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft, Building, Globe, Check } from "lucide-react-native";
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState("");
