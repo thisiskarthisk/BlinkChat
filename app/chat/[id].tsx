@@ -1311,6 +1311,28 @@ export default function ChatScreen() {
   const [deletedForMeIds, setDeletedForMeIds] = useState<string[]>([]);
   const [friendsList, setFriendsList] = useState<any[]>([]);
 
+  const navigation = useNavigation();
+
+  useEffect(() => {
+    const hasActiveOverlay = !!selectedMedia || showAttachmentSheet || showActionsModal || showForwardModal;
+    if (!hasActiveOverlay) return;
+
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      e.preventDefault();
+      if (selectedMedia) {
+        setSelectedMedia(null);
+      } else if (showAttachmentSheet) {
+        setShowAttachmentSheet(false);
+      } else if (showActionsModal) {
+        setShowActionsModal(false);
+      } else if (showForwardModal) {
+        setShowForwardModal(false);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, selectedMedia, showAttachmentSheet, showActionsModal, showForwardModal]);
+
   const handleMediaPress = (uri: string, type: "image" | "video" | "file" | "audio", fileName?: string) => {
     setSelectedMedia({ uri, type, fileName });
   };
