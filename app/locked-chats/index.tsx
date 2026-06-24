@@ -5,13 +5,13 @@ import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../hooks/useAuth";
 import { supabase } from "../../lib/supabase";
 
@@ -141,7 +141,7 @@ export default function LockedChatsScreen() {
         <View style={styles.emptyState}>
           <Lock size={64} color="#E5E7EB" />
           <Text style={styles.emptyTitle}>No Locked Chats</Text>
-          <Text style={styles.emptySubtitle}>You haven't locked any conversations yet.</Text>
+          <Text style={styles.emptySubtitle}>{"You haven't locked any conversations yet."}</Text>
         </View>
       ) : (
         <FlatList

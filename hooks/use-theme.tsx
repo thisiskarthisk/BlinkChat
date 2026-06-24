@@ -34,7 +34,7 @@ export function ThemeProvider({
   const [themeName, setThemeName] = useState<ThemeName>('minimal');
 
   const getStorageKey = () => {
-    return user ? `${STORAGE_PREFIX}${user.id}` : `${STORAGE_PREFIX}guest`;
+    return `${STORAGE_PREFIX}global`;
   };
 
   useEffect(() => {

@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "../lib/supabase";
 import { markAllMessagesDelivered } from "../services/chatService";
 import { registerForPushNotificationsAsync } from "../services/pushNotificationService";
+import { APP_CONFIG } from "../constants/config";
 
 interface Profile {
   id: string;
@@ -164,7 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: authUser.user_metadata?.username || authUser.email?.split("@")[0] || `user_${authUser.id.slice(0, 6)}`,
         email: authUser.email || "",
         phone: authUser.user_metadata?.phone || null,
-        status: "Hey there! I am using BlinkChat",
+        status: `Hey there! I am using ${APP_CONFIG.appName}`,
         is_online: true,
         last_seen: new Date().toISOString(),
         company_id: authUser.user_metadata?.company_id || null,
@@ -211,14 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS === 'web') {
       try {
         await AsyncStorage.removeItem("device_session_token");
-        const keys = await AsyncStorage.getAllKeys();
-        for (const key of keys) {
-          if (key.includes('auth-token') || key.startsWith('sb-') || key.includes('supabase')) {
-            await AsyncStorage.removeItem(key);
-          }
+        if (typeof window !== 'undefined') {
+          if (window.localStorage) window.localStorage.clear();
+          if (window.sessionStorage) window.sessionStorage.clear();
         }
+        await supabase.auth.signOut({ scope: 'local' });
       } catch (e) {
-        console.warn("Error clearing AsyncStorage on web logout:", e);
+        console.warn("Error clearing storage on web logout:", e);
       }
       window.location.reload();
     } else {

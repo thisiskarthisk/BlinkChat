@@ -5,8 +5,10 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
+import { View, Image, ActivityIndicator } from "react-native";
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
+let isSplashHidden = false;
 
 export default function RootLayout() {
   return (
@@ -40,10 +42,23 @@ function RootNav() {
       }
     }
 
-    SplashScreen.hideAsync().catch(() => {});
+    if (!isSplashHidden) {
+      isSplashHidden = true;
+      SplashScreen.hideAsync().catch(() => {});
+    }
   }, [session, loading, segments]);
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: isDark ? "#080A10" : "#FFFFFF", justifyContent: "center", alignItems: "center" }}>
+        <Image
+          source={require("../assets/images/icon.png")}
+          style={{ width: 120, height: 120, borderRadius: 32, marginBottom: 24 }}
+        />
+        <ActivityIndicator size="large" color={isDark ? "#38BDF8" : "#2563EB"} />
+      </View>
+    );
+  }
 
   return (
     <NavThemeProvider value={isDark ? DarkTheme : DefaultTheme}>

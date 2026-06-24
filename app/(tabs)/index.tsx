@@ -1,520 +1,3 @@
-// import { router } from "expo-router";
-// import { useEffect, useState } from "react";
-// import {
-//   FlatList,
-//   StyleSheet,
-//   Text,
-//   TouchableOpacity,
-//   View,
-// } from "react-native";
-
-// import { supabase } from "../../lib/supabase";
-
-// export default function HomeScreen() {
-//   const [chats, setChats] = useState<any[]>([]);
-//   const [loading, setLoading] = useState(false);
-
-//   useEffect(() => {
-//     loadChats();
-
-//     // Listen for new messages, new chat members, and profile changes (online status)
-//     const channel = supabase
-//       .channel("home-updates")
-//       .on(
-//         "postgres_changes",
-//         {
-//           event: "*",
-//           schema: "public",
-//           table: "messages",
-//         },
-//         () => {
-//           loadChats();
-//         }
-//       )
-//       .on(
-//         "postgres_changes",
-//         {
-//           event: "*",
-//           schema: "public",
-//           table: "chat_members",
-//         },
-//         () => {
-//           loadChats();
-//         }
-//       )
-//       .on(
-//         "postgres_changes",
-//         {
-//           event: "UPDATE",
-//           schema: "public",
-//           table: "profiles",
-//         },
-//         () => {
-//           loadChats();
-//         }
-//       )
-//       .subscribe();
-
-//     return () => {
-//       supabase.removeChannel(channel);
-//     };
-//   }, []);
-
-//   // const loadChats = async () => {
-//   //   try {
-//   //     setLoading(true);
-
-//   //     const {
-//   //       data: { user },
-//   //     } = await supabase.auth.getUser();
-
-//   //     if (!user) return;
-
-//   //     const { data: myChats } = await supabase
-//   //       .from("chat_members")
-//   //       .select("*")
-//   //       .eq("user_id", user.id);
-
-//   //     const result: any[] = [];
-
-//   //     for (const chat of myChats || []) {
-//   //       const { data: otherMember } = await supabase
-//   //         .from("chat_members")
-//   //         .select("*")
-//   //         .eq("chat_id", chat.chat_id)
-//   //         .neq("user_id", user.id)
-//   //         .maybeSingle();
-
-//   //       if (!otherMember) continue;
-
-//   //       const { data: profile } = await supabase
-//   //         .from("profiles")
-//   //         .select("*")
-//   //         .eq("id", otherMember.user_id)
-//   //         .maybeSingle();
-
-//   //       const { data: lastMessage } = await supabase
-//   //         .from("messages")
-//   //         .select("*")
-//   //         .eq("chat_id", chat.chat_id)
-//   //         .order("created_at", {
-//   //           ascending: false,
-//   //         })
-//   //         .limit(1)
-//   //         .maybeSingle();
-
-//   //       const { count } = await supabase
-//   //         .from("messages")
-//   //         .select("*", {
-//   //           count: "exact",
-//   //           head: true,
-//   //         })
-//   //         .eq("chat_id", chat.chat_id)
-//   //         .eq("is_seen", false)
-//   //         .neq("sender_id", user.id);
-
-//   //       result.push({
-//   //         chat_id: chat.chat_id,
-//   //         profile,
-//   //         lastMessage,
-//   //         unreadCount: count || 0,
-//   //       });
-//   //     }
-
-//   //     result.sort((a, b) => {
-//   //       const timeA = a.lastMessage?.created_at
-//   //         ? new Date(a.lastMessage.created_at).getTime()
-//   //         : 0;
-
-//   //       const timeB = b.lastMessage?.created_at
-//   //         ? new Date(b.lastMessage.created_at).getTime()
-//   //         : 0;
-
-//   //       return timeB - timeA;
-//   //     });
-
-//   //     setChats(result);
-//   //   } catch (err) {
-//   //     console.log(err);
-//   //   } finally {
-//   //     setLoading(false);
-//   //   }
-//   // };
-
-
-//   const loadChats = async () => {
-//   try {
-//     setLoading(true);
-
-//     const {
-//       data: { user },
-//       error: userError,
-//     } = await supabase.auth.getUser();
-
-//     if (userError || !user) {
-//       console.log("User not found");
-//       return;
-//     }
-
-//     const { data: myChats, error: chatError } =
-//       await supabase
-//         .from("chat_members")
-//         .select("*")
-//         .eq("user_id", user.id);
-
-//     if (chatError) {
-//       console.log(chatError);
-//       return;
-//     }
-
-//     const result: any[] = [];
-
-//     for (const chat of myChats || []) {
-
-//       // Get other member
-//       const {
-//         data: otherMember,
-//         error: memberError,
-//       } = await supabase
-//         .from("chat_members")
-//         .select("*")
-//         .eq("chat_id", chat.chat_id)
-//         .neq("user_id", user.id)
-//         .maybeSingle();
-
-//       if (memberError || !otherMember) {
-//         continue;
-//       }
-
-//       // Get profile
-//       const {
-//         data: profile,
-//       } = await supabase
-//         .from("profiles")
-//         .select("*")
-//         .eq("id", otherMember.user_id)
-//         .maybeSingle();
-
-//       // Get latest message
-//       const {
-//         data: lastMessage,
-//       } = await supabase
-//         .from("messages")
-//         .select("*")
-//         .eq("chat_id", chat.chat_id)
-//         .order("created_at", {
-//           ascending: false,
-//         })
-//         .limit(1)
-//         .maybeSingle();
-
-//       // Unread count
-//       const {
-//         count: unreadCount,
-//       } = await supabase
-//         .from("messages")
-//         .select("*", {
-//           count: "exact",
-//           head: true,
-//         })
-//         .eq("chat_id", chat.chat_id)
-//         .eq("is_seen", false)
-//         .neq("sender_id", user.id);
-
-//       result.push({
-//         chat_id: chat.chat_id,
-//         profile,
-//         lastMessage,
-//         unreadCount:
-//           unreadCount || 0,
-//       });
-//     }
-
-
-
-//     // Latest message first
-//     result.sort((a, b) => {
-//       const timeA =
-//         a.lastMessage?.created_at
-//           ? new Date(
-//               a.lastMessage.created_at
-//             ).getTime()
-//           : 0;
-
-//       const timeB =
-//         b.lastMessage?.created_at
-//           ? new Date(
-//               b.lastMessage.created_at
-//             ).getTime()
-//           : 0;
-
-//       return timeB - timeA;
-//     });
-
-//     // setChats(result);
-
-//     const uniqueChats = result.filter(
-//       (chat, index, self) =>
-//         index ===
-//         self.findIndex(
-//           (c) =>
-//             c.profile?.id ===
-//             chat.profile?.id
-//         )
-//     );
-
-// setChats(uniqueChats);
-
-//   } catch (err) {
-//     console.log(
-//       "Load Chats Error:",
-//       err
-//     );
-//   } finally {
-//     setLoading(false);
-//   }
-// };
-
-
-//   const logout = async () => {
-//     const {
-//       data: { user },
-//     } = await supabase.auth.getUser();
-
-//     if (user) {
-//       await supabase
-//         .from("profiles")
-//         .update({
-//           is_online: false,
-//           last_seen: new Date().toISOString(),
-//         })
-//         .eq("id", user.id);
-//     }
-
-//     await supabase.auth.signOut();
-
-//     router.replace("/(auth)/login");
-//   };
-
-//   return (
-//     <View style={styles.container}>
-//       <Text style={styles.title}>
-//         BlinkChat
-//       </Text>
-
-//       <TouchableOpacity
-//         style={styles.newChatBtn}
-//         onPress={() =>
-//           router.push("/users/search")
-//         }
-//       >
-//         <Text style={styles.btnText}>
-//           New Chat
-//         </Text>
-//       </TouchableOpacity>
-
-//       <FlatList
-//         data={chats}
-//         refreshing={loading}
-//         onRefresh={loadChats}
-//         keyExtractor={(item) => item.chat_id}
-//         renderItem={({ item }) => (
-//           <TouchableOpacity
-//             style={styles.chatCard}
-//             onPress={() =>
-//               router.push({
-//                 pathname: "/chat/[id]",
-//                 params: {
-//                   id: item.chat_id,
-//                   name:
-//                     item.profile?.full_name ||
-//                     item.profile?.username ||
-//                     "User",
-//                 },
-//               })
-//             }
-//           >
-//             <View style={styles.row}>
-//               <View style={{ flex: 1 }}>
-//                 {/* <Text style={styles.chatName}>
-//                   {item.profile?.full_name ||
-//                     item.profile?.username ||
-//                     "User"}
-//                 </Text> */}
-//                 <View>
-//                   <Text style={styles.chatName}>
-//                     {item.profile?.full_name ||
-//                       item.profile?.username ||
-//                       "User"}
-//                   </Text>
-
-//                   {item.profile?.is_online ? (
-//                     <Text style={styles.online}>
-//                       ● Online
-//                     </Text>
-//                   ) : (
-//                     <Text style={styles.offline}>
-//                         {item.profile?.last_seen
-//                         ? `Last seen ${new Date(
-//                             item.profile.last_seen
-//                           ).toLocaleTimeString([], {
-//                             hour: "2-digit",
-//                             minute: "2-digit",
-//                           })}`
-//                         : "Offline"}
-//                     </Text>
-//                   )}
-//                 </View>
-
-//                 <Text
-//                   style={styles.lastMessage}
-//                   numberOfLines={1}
-//                 >
-//                   {item.lastMessage?.message ||
-//                     "No messages"}
-//                 </Text>
-//               </View>
-
-//               <View style={styles.rightSide}>
-//                 <Text style={styles.time}>
-//                   {item.lastMessage?.created_at
-//                     ? new Date(
-//                         item.lastMessage.created_at
-//                       ).toLocaleTimeString(
-//                         "en-IN",
-//                         {
-//                           hour: "2-digit",
-//                           minute: "2-digit",
-//                           hour12: true,
-//                         }
-//                       )
-//                     : ""}
-//                 </Text>
-
-//                 {item.unreadCount > 0 && (
-//                   <View style={styles.badge}>
-//                     <Text style={styles.badgeText}>
-//                       {item.unreadCount}
-//                     </Text>
-//                   </View>
-//                 )}
-//               </View>
-//             </View>
-//           </TouchableOpacity>
-//         )}
-//       />
-
-//       <TouchableOpacity
-//         style={styles.logoutBtn}
-//         onPress={logout}
-//       >
-//         <Text style={styles.btnText}>
-//           Logout
-//         </Text>
-//       </TouchableOpacity>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: "#F8FAFC",
-//     padding: 15,
-//   },
-
-//   title: {
-//     fontSize: 30,
-//     fontWeight: "bold",
-//     marginTop: 50,
-//     marginBottom: 20,
-//     color: "#111827",
-//   },
-
-//   newChatBtn: {
-//     backgroundColor: "#2563EB",
-//     padding: 15,
-//     borderRadius: 12,
-//     marginBottom: 20,
-//   },
-
-//   btnText: {
-//     color: "#FFFFFF",
-//     textAlign: "center",
-//     fontWeight: "bold",
-//   },
-
-//   chatCard: {
-//     backgroundColor: "#FFFFFF",
-//     padding: 15,
-//     borderRadius: 12,
-//     marginBottom: 10,
-//     borderWidth: 1,
-//     borderColor: "#E5E7EB",
-//   },
-
-//   row: {
-//     flexDirection: "row",
-//     alignItems: "center",
-//   },
-
-//   chatName: {
-//     fontSize: 16,
-//     fontWeight: "700",
-//     color: "#111827",
-//   },
-
-//   lastMessage: {
-//     color: "#6B7280",
-//     marginTop: 4,
-//   },
-
-//   rightSide: {
-//     alignItems: "flex-end",
-//   },
-
-//   time: {
-//     fontSize: 12,
-//     color: "#9CA3AF",
-//   },
-
-//   badge: {
-//     backgroundColor: "#22C55E",
-//     minWidth: 24,
-//     height: 24,
-//     borderRadius: 12,
-//     justifyContent: "center",
-//     alignItems: "center",
-//     marginTop: 5,
-//   },
-
-//   badgeText: {
-//     color: "#FFFFFF",
-//     fontWeight: "bold",
-//     fontSize: 12,
-//   },
-
-//   logoutBtn: {
-//     backgroundColor: "#EF4444",
-//     padding: 15,
-//     borderRadius: 12,
-//     marginTop: 10,
-//   },
-//   online: {
-//     color: "#22C55E",
-//     fontSize: 12,
-//     marginTop: 2,
-//   },
-
-//   offline: {
-//     color: "#9CA3AF",
-//     fontSize: 12,
-//     marginTop: 2,
-//   },
-// });
-
-
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { router, useFocusEffect } from "expo-router";
@@ -524,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Platform,
   RefreshControl,
@@ -535,10 +19,20 @@ import {
   View,
 } from "react-native";
 import WebSplitScreenLayout from "../../components/WebSplitScreenLayout";
+import { APP_CONFIG } from "../../constants/config";
 import { useTheme } from "../../hooks/use-theme";
 import { useAuth } from "../../hooks/useAuth";
 import { supabase } from "../../lib/supabase";
 import { markAllMessagesDelivered } from "../../services/chatService";
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  getAcceptedFriends,
+  getPendingRequests,
+  getSentPendingRequests,
+  rejectFriendRequest,
+} from "../../services/friendService";
+import { triggerLocalNotification } from "../../services/pushNotificationService";
 import {
   AutoDeleteInfo,
   checkAutoDeletePolicy,
@@ -591,6 +85,52 @@ function getAvatarColor(name: string) {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
+const isAudioMessage = (item: any) => {
+  if (!item) return false;
+  const type = item.message_type;
+  if (type === "audio") return true;
+  if (type === "file") {
+    const name = item.file_name || item.message || "";
+    const lower = name.toLowerCase();
+    return lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".m4a") || lower.endsWith(".aac") || lower.endsWith(".ogg") || lower.endsWith(".webm") || lower.endsWith(".mpga");
+  }
+  return false;
+};
+
+function getMessagePreview(lastMessage: any) {
+  if (!lastMessage) return "No messages yet";
+  const type = lastMessage.message_type || "text";
+  const message = lastMessage.message || "";
+  
+  if (type === "image") return "📷 Photo";
+  if (type === "video") return "🎥 Video";
+  if (type === "audio") {
+    const min = Math.floor((lastMessage.audio_duration || 0) / 60);
+    const rem = (lastMessage.audio_duration || 0) % 60;
+    const durStr = `${min}:${String(rem).padStart(2, "0")}`;
+    return `🎤 Voice Message (${durStr})`;
+  }
+  if (type === "file") {
+    if (isAudioMessage(lastMessage)) {
+      return `🎵 ${lastMessage.file_name || "Audio File"}`;
+    }
+    return `📄 ${lastMessage.file_name || "File"}`;
+  }
+  if (type === "location") return "📍 Location";
+  if (type === "live_location") return "📍 Live Location";
+  
+  let cleanText = message;
+  if (cleanText.startsWith("|||reply_id:")) {
+    const parts = cleanText.split("|||");
+    cleanText = parts[parts.length - 1] || "";
+  }
+  if (cleanText.startsWith("|||forwarded:true|||")) {
+    cleanText = cleanText.substring("|||forwarded:true|||".length);
+  }
+  
+  return cleanText;
+}
+
 export default function HomeScreen() {
   const { user, signOut } = useAuth();
 
@@ -613,6 +153,22 @@ export default function HomeScreen() {
   // Retention Alert state
   const [autoDeleteInfo, setAutoDeleteInfo] = useState<AutoDeleteInfo | null>(null);
   const [countdownText, setCountdownText] = useState("");
+
+  // Friendship and Requests State
+  const [acceptedFriends, setAcceptedFriends] = useState<any[]>([]);
+  const [acceptedFriendsCount, setAcceptedFriendsCount] = useState(0);
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<any[]>([]);
+  const [totalRequestsCount, setTotalRequestsCount] = useState(0);
+
+  // Modal Visibility States
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [friendsSearch, setFriendsSearch] = useState("");
+  const [requestsTab, setRequestsTab] = useState<"received" | "sent">("received");
+  const [loadingFriends, setLoadingFriends] = useState(false);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [actioningRequestId, setActioningRequestId] = useState<number | null>(null);
 
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
@@ -768,12 +324,34 @@ export default function HomeScreen() {
 
   const loadRequests = async () => {
     if (!user?.id) return;
-    const { count } = await supabase
-      .from("friend_requests")
-      .select("*", { count: "exact", head: true })
-      .eq("receiver_id", user.id)
-      .eq("status", "pending");
-    setPendingRequestsCount(count || 0);
+    try {
+      setLoadingFriends(true);
+      setLoadingRequests(true);
+
+      // 1. Get accepted friends
+      const friends = await getAcceptedFriends(user.id);
+      setAcceptedFriends(friends);
+      setAcceptedFriendsCount(friends.length);
+
+      // 2. Get incoming pending requests
+      const incoming = await getPendingRequests(user.id);
+      setIncomingRequests(incoming || []);
+
+      // 3. Get outgoing pending requests
+      const outgoing = await getSentPendingRequests(user.id);
+      setOutgoingRequests(outgoing || []);
+
+      // 4. Update request counts
+      const incomingCount = incoming?.length || 0;
+      const outgoingCount = outgoing?.length || 0;
+      setTotalRequestsCount(incomingCount + outgoingCount);
+      setPendingRequestsCount(incomingCount);
+    } catch (error) {
+      console.log("loadRequests error:", error);
+    } finally {
+      setLoadingFriends(false);
+      setLoadingRequests(false);
+    }
   };
 
   function applySearch(data: any[], query: string) {
@@ -831,6 +409,20 @@ export default function HomeScreen() {
     }, [loadChats])
   );
 
+  // Periodic background/foreground sync every 15 minutes to secure messages before deletion
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Run sync immediately on startup
+    syncAndCleanupSupabase(user.id).catch((e) => console.log("Init sync error:", e));
+
+    const interval = setInterval(() => {
+      syncAndCleanupSupabase(user.id).catch((e) => console.log("Periodic sync error:", e));
+    }, 15 * 60 * 1000); // 15 minutes
+
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   // Load cached chats on mount
   useEffect(() => {
     const loadCachedChats = async () => {
@@ -853,10 +445,44 @@ export default function HomeScreen() {
   useEffect(() => {
     const channel = supabase
       .channel("home-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, loadChats)
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, async (payload) => {
+        loadChats();
+        if (payload.eventType === "INSERT") {
+          const newMsg = payload.new;
+          if (newMsg && newMsg.sender_id !== user?.id) {
+            // Check if current user is part of the chat room
+            const { data: member } = await supabase
+              .from("chat_members")
+              .select("chat_id")
+              .eq("chat_id", newMsg.chat_id)
+              .eq("user_id", user?.id)
+              .maybeSingle();
+
+            if (member) {
+              const { data: sender } = await supabase
+                .from("profiles")
+                .select("full_name, username")
+                .eq("id", newMsg.sender_id)
+                .maybeSingle();
+
+              const senderName = sender?.full_name || sender?.username || "New Message";
+              let bodyText = newMsg.message || "";
+              if (newMsg.message_type === "image") bodyText = "📷 Sent an image";
+              else if (newMsg.message_type === "video") bodyText = "🎥 Sent a video";
+              else if (newMsg.message_type === "audio") bodyText = "🎵 Sent an audio message";
+              else if (newMsg.message_type === "file") bodyText = "📁 Sent a file";
+
+              const isMuted = await AsyncStorage.getItem(`chat_notifications_muted_${user?.id}_${newMsg.sender_id}`);
+              if (isMuted !== "true") {
+                await triggerLocalNotification(senderName, bodyText, { chatId: newMsg.chat_id });
+              }
+            }
+          }
+        }
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" }, loadChats)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, loadChats)
-      .on("postgres_changes", { event: "*", schema: "public", table: "friend_requests", filter: `receiver_id=eq.${user?.id}` }, loadRequests)
+      .on("postgres_changes", { event: "*", schema: "public", table: "friend_requests" }, loadRequests)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -886,14 +512,7 @@ export default function HomeScreen() {
     const name = item.profile?.full_name || item.profile?.username || "User";
     const avatarColor = getAvatarColor(name);
     const isOnline = item.profile?.is_online;
-    const msgText = item.lastMessage?.message || "No messages yet";
-    const msgType = item.lastMessage?.message_type || "text";
-    const preview =
-      msgType === "image" ? "📷 Photo"
-      : msgType === "video" ? "🎥 Video"
-      : msgType === "audio" ? `🎤 ${formatDuration(item.lastMessage?.audio_duration || 0)}`
-      : msgType === "file" ? `📄 ${item.lastMessage?.file_name || "File"}`
-      : msgText;
+    const preview = getMessagePreview(item.lastMessage);
 
     return (
       <TouchableOpacity
@@ -908,7 +527,11 @@ export default function HomeScreen() {
       >
         {/* Avatar */}
         <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
-          <Text style={styles.avatarText}>{getInitials(name)}</Text>
+          {item.profile?.avatar_url ? (
+            <Image source={{ uri: item.profile.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>{getInitials(name)}</Text>
+          )}
           {isOnline && <View style={styles.onlineDot} />}
         </View>
 
@@ -942,7 +565,7 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setShowLockedSection(!showLockedSection)}>
-          <Text style={styles.headerTitle}>BlinkChat</Text>
+          <Text style={styles.headerTitle}>{APP_CONFIG.appName}</Text>
           <Text style={styles.headerSub}>
             {chats.length > 0 ? `${chats.length} conversation${chats.length > 1 ? "s" : ""}` : ""}
           </Text>
@@ -987,6 +610,26 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Quick Stats Pill Row */}
+      {/* <View style={styles.statsRow}>
+        <TouchableOpacity 
+          style={[styles.statCard]}
+          activeOpacity={0.7}
+          onPress={() => {
+            setFriendsSearch("");
+            setShowFriendsModal(true);
+          }}
+        >
+          <View style={[styles.statIconContainer, { backgroundColor: "#EFF6FF" }]}>
+            <Users size={16} color="#2563EB" />
+          </View>
+          <View style={styles.statInfo}>
+            <Text style={styles.statCount}>{acceptedFriendsCount}</Text>
+            <Text style={styles.statLabel}>Friends</Text>
+          </View>
+        </TouchableOpacity>
+      </View> */}
 
 
 
@@ -1091,6 +734,284 @@ export default function HomeScreen() {
           <Text style={styles.floatingTimerText}>{countdownText}</Text>
         </TouchableOpacity>
       )}
+
+      {/* Accepted Friends Modal */}
+      {/* <Modal visible={showFriendsModal} animationType="slide" transparent={false} onRequestClose={() => setShowFriendsModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: "#F8FAFC" }]}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>My Friends</Text>
+            <TouchableOpacity 
+              style={styles.modalCloseBtn} 
+              onPress={() => setShowFriendsModal(false)}
+            >
+              <X size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalSearchContainer}>
+            <Search size={18} color="#9CA3AF" style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.modalSearchInput}
+              placeholder="Search friends..."
+              placeholderTextColor="#9CA3AF"
+              value={friendsSearch}
+              onChangeText={setFriendsSearch}
+            />
+            {friendsSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setFriendsSearch("")}>
+                <X size={18} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {loadingFriends ? (
+            <View style={styles.modalCenter}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          ) : acceptedFriends.length === 0 ? (
+            <View style={styles.modalCenter}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>👥</Text>
+              <Text style={styles.modalEmptyTitle}>No friends yet</Text>
+              <Text style={styles.modalEmptySub}>Discover and connect with new friends using the search bar.</Text>
+              <TouchableOpacity
+                style={styles.findFriendsBtn}
+                onPress={() => {
+                  setShowFriendsModal(false);
+                  router.push("/users/search");
+                }}
+              >
+                <Text style={styles.findFriendsBtnText}>Find Friends</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={acceptedFriends.filter(item => {
+                const name = (item.friendProfile?.full_name || item.friendProfile?.username || "").toLowerCase();
+                return name.includes(friendsSearch.toLowerCase());
+              })}
+              keyExtractor={(item) => item.id.toString()}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+              renderItem={({ item }) => {
+                const friend = item.friendProfile;
+                const name = friend?.full_name || friend?.username || "User";
+                const isOnline = friend?.is_online;
+                const avatarBg = getAvatarColor(name);
+
+                return (
+                  <TouchableOpacity
+                    style={styles.friendCard}
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      if (!user?.id || !friend?.id) return;
+                      const chatId = await createOrGetChat(user.id, friend.id);
+                      if (chatId) {
+                        setShowFriendsModal(false);
+                        router.push({
+                          pathname: "/chat/[id]",
+                          params: { id: chatId, name },
+                        });
+                      }
+                    }}
+                  >
+                    <View style={[styles.modalAvatar, { backgroundColor: avatarBg }]}>
+                      {friend?.avatar_url ? (
+                        <Image source={{ uri: friend.avatar_url }} style={styles.modalAvatarImage} />
+                      ) : (
+                        <Text style={styles.modalAvatarText}>{getInitials(name)}</Text>
+                      )}
+                      {isOnline && <View style={styles.onlineDot} />}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.friendName}>{name}</Text>
+                      <Text style={styles.friendStatus} numberOfLines={1}>
+                        {friend?.status || `Hey there! I am using ${APP_CONFIG.appName}`}
+                      </Text>
+                    </View>
+                    <ChevronRight size={18} color="#9CA3AF" />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
+        </View>
+      </Modal> */}
+
+      {/* Requests Modal */}
+      <Modal visible={showRequestsModal} animationType="slide" transparent={false} onRequestClose={() => setShowRequestsModal(false)}>
+        <View style={[styles.modalContainer, { backgroundColor: "#F8FAFC" }]}>
+          <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalHeaderTitle}>Chat Requests</Text>
+            <TouchableOpacity 
+              style={styles.modalCloseBtn} 
+              onPress={() => setShowRequestsModal(false)}
+            >
+              <X size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Segment Selector Tabs */}
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity
+              style={[styles.tabBtn, requestsTab === "received" && styles.tabBtnActive]}
+              onPress={() => setRequestsTab("received")}
+            >
+              <Text style={[styles.tabBtnText, requestsTab === "received" && styles.tabBtnTextActive]}>
+                Received ({incomingRequests.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabBtn, requestsTab === "sent" && styles.tabBtnActive]}
+              onPress={() => setRequestsTab("sent")}
+            >
+              <Text style={[styles.tabBtnText, requestsTab === "sent" && styles.tabBtnTextActive]}>
+                Sent ({outgoingRequests.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {loadingRequests ? (
+            <View style={styles.modalCenter}>
+              <ActivityIndicator size="large" color="#2563EB" />
+            </View>
+          ) : requestsTab === "received" ? (
+            incomingRequests.length === 0 ? (
+              <View style={styles.modalCenter}>
+                <Text style={{ fontSize: 48, marginBottom: 12 }}>📩</Text>
+                <Text style={styles.modalEmptyTitle}>No incoming requests</Text>
+                <Text style={styles.modalEmptySub}>When people send you chat requests, they'll appear here.</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={incomingRequests}
+                keyExtractor={(item) => item.id.toString()}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+                renderItem={({ item }) => {
+                  const sender = item.sender;
+                  const name = sender?.full_name || sender?.username || "User";
+                  const avatarBg = getAvatarColor(name);
+                  const isActioning = actioningRequestId === item.id;
+
+                  return (
+                    <View style={styles.requestItemCard}>
+                      <View style={[styles.modalAvatar, { backgroundColor: avatarBg }]}>
+                        {sender?.avatar_url ? (
+                          <Image source={{ uri: sender.avatar_url }} style={styles.modalAvatarImage} />
+                        ) : (
+                          <Text style={styles.modalAvatarText}>{getInitials(name)}</Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={styles.friendName}>{name}</Text>
+                        <Text style={styles.friendStatus}>@{sender?.username || "username"}</Text>
+                      </View>
+                      <View style={styles.requestActions}>
+                        {isActioning ? (
+                          <ActivityIndicator size="small" color="#2563EB" />
+                        ) : (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.requestBtn, styles.requestAcceptBtn]}
+                              onPress={async () => {
+                                setActioningRequestId(item.id);
+                                const { success, chatId, error } = await acceptFriendRequest(item.id);
+                                if (success && chatId) {
+                                  setShowRequestsModal(false);
+                                  await loadRequests();
+                                  router.push({
+                                    pathname: "/chat/[id]",
+                                    params: { id: chatId, name },
+                                  });
+                                } else if (error) {
+                                  Alert.alert("Error", error);
+                                }
+                                setActioningRequestId(null);
+                              }}
+                            >
+                              <Text style={styles.requestAcceptText}>Accept</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.requestBtn, styles.requestRejectBtn]}
+                              onPress={async () => {
+                                setActioningRequestId(item.id);
+                                const { success, error } = await rejectFriendRequest(item.id);
+                                if (success) {
+                                  await loadRequests();
+                                } else if (error) {
+                                  Alert.alert("Error", error);
+                                }
+                                setActioningRequestId(null);
+                              }}
+                            >
+                              <Text style={styles.requestRejectText}>Reject</Text>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
+                    </View>
+                  );
+                }}
+              />
+            )
+          ) : outgoingRequests.length === 0 ? (
+            <View style={styles.modalCenter}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>📤</Text>
+              <Text style={styles.modalEmptyTitle}>No sent requests</Text>
+              <Text style={styles.modalEmptySub}>Your sent friend requests that are waiting for response will appear here.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={outgoingRequests}
+              keyExtractor={(item) => item.id.toString()}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+              renderItem={({ item }) => {
+                const receiver = item.receiver;
+                const name = receiver?.full_name || receiver?.username || "User";
+                const avatarBg = getAvatarColor(name);
+                const isActioning = actioningRequestId === item.id;
+
+                return (
+                  <View style={styles.requestItemCard}>
+                    <View style={[styles.modalAvatar, { backgroundColor: avatarBg }]}>
+                      {receiver?.avatar_url ? (
+                        <Image source={{ uri: receiver.avatar_url }} style={styles.modalAvatarImage} />
+                      ) : (
+                        <Text style={styles.modalAvatarText}>{getInitials(name)}</Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.friendName}>{name}</Text>
+                      <Text style={styles.friendStatus}>@{receiver?.username || "username"}</Text>
+                    </View>
+                    <View style={styles.requestActions}>
+                      {isActioning ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.requestBtn, styles.requestCancelBtn]}
+                          onPress={async () => {
+                            setActioningRequestId(item.id);
+                            const { success, error } = await cancelFriendRequest(item.id);
+                            if (success) {
+                              await loadRequests();
+                            } else if (error) {
+                              Alert.alert("Error", error);
+                            }
+                            setActioningRequestId(null);
+                          }}
+                        >
+                          <Text style={styles.requestCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              }}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1233,6 +1154,12 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
+  },
+
+  avatarImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
 
   onlineDot: {
@@ -1407,5 +1334,239 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  // Stats Row
+  statsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  statIconContainer: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  statInfo: {
+    justifyContent: "center",
+  },
+  statCount: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  statLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "500",
+    marginTop: 1,
+  },
+
+  // Modals Styling
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
+  },
+  modalHeaderTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSearchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 16,
+    marginVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: "#111827",
+  },
+  modalCenter: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  modalEmptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 6,
+  },
+  modalEmptySub: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  findFriendsBtn: {
+    marginTop: 20,
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  findFriendsBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  friendCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+  },
+  modalAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+    position: "relative",
+  },
+  modalAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  modalAvatarImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
+  friendName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 3,
+  },
+  friendStatus: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+
+  // Tabs style for Requests Modal
+  tabsContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    marginVertical: 12,
+    gap: 8,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  tabBtnActive: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E5E7EB",
+  },
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#6B7280",
+  },
+  tabBtnTextActive: {
+    color: "#2563EB",
+    fontWeight: "700",
+  },
+
+  // Request Cards
+  requestItemCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 8,
+    borderWidth: 0.5,
+    borderColor: "#E5E7EB",
+  },
+  requestActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  requestBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  requestAcceptBtn: {
+    backgroundColor: "#2563EB",
+  },
+  requestAcceptText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  requestRejectBtn: {
+    backgroundColor: "#F3F4F6",
+  },
+  requestRejectText: {
+    color: "#EF4444",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  requestCancelBtn: {
+    backgroundColor: "#FEF2F2",
+  },
+  requestCancelText: {
+    color: "#EF4444",
+    fontWeight: "600",
+    fontSize: 12,
   },
 });

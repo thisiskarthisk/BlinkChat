@@ -34,6 +34,8 @@ ALTER TABLE chat_members ADD COLUMN IF NOT EXISTS chat_background_image TEXT;
 
 -- 4. MEDIA TRACKING (Auto-Cleanup Support)
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_path TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_name TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS audio_duration DOUBLE PRECISION;
 
 -- 5. REALTIME ENABLEMENT
 -- Ensure realtime is active for the new notifications table

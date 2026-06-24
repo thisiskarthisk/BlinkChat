@@ -80,7 +80,7 @@ export default function AnimatedSplashOverlay() {
 
       {/* Tagline */}
       <Animated.Text style={[styles.tagline, { opacity: tagOpacity }]}>
-        Every dish has a story. Let's cook yours.
+        {"Every dish has a story. Let's cook yours."}
       </Animated.Text>
 
       {/* Loading indicator */}
@@ -110,7 +110,7 @@ export default function AnimatedSplashOverlay() {
       </Animated.View>
 
       {/* Bottom wordmark */}
-      <Text style={styles.bottomText}>From Anthropic's kitchen 🌿</Text>
+      <Text style={styles.bottomText}>{"From Anthropic's kitchen 🌿"}</Text>
     </View>
   );
 }

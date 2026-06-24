@@ -244,3 +244,67 @@ export async function unblockUser(blockerId: string, blockedId: string) {
     return { error: error.message };
   }
 }
+
+export async function getAcceptedFriends(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("friend_requests")
+      .select(`
+        *,
+        sender:profiles!friend_requests_sender_id_fkey(*),
+        receiver:profiles!friend_requests_receiver_id_fkey(*)
+      `)
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .eq("status", "accepted");
+
+    if (error) throw error;
+    
+    // Map to extract friend profile
+    return (data || []).map((row: any) => {
+      const friendProfile = row.sender_id === userId ? row.receiver : row.sender;
+      return {
+        id: row.id,
+        friendProfile,
+        created_at: row.created_at,
+      };
+    });
+  } catch (error: any) {
+    console.log("getAcceptedFriends:", error.message);
+    return [];
+  }
+}
+
+export async function getSentPendingRequests(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("friend_requests")
+      .select(`
+        *,
+        receiver:profiles!friend_requests_receiver_id_fkey(*)
+      `)
+      .eq("sender_id", userId)
+      .eq("status", "pending");
+
+    if (error) throw error;
+    return data;
+  } catch (error: any) {
+    console.log("getSentPendingRequests:", error.message);
+    return [];
+  }
+}
+
+export async function cancelFriendRequest(requestId: number) {
+  try {
+    const { error } = await supabase
+      .from("friend_requests")
+      .delete()
+      .eq("id", requestId);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error: any) {
+    console.log("cancelFriendRequest:", error.message);
+    return { error: error.message };
+  }
+}
+

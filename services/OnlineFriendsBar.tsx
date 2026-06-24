@@ -8,6 +8,7 @@
 import { supabase } from "@/lib/supabase";
 import { createOrGetChat } from "@/services/chatService";
 import { router } from "expo-router";
+import { APP_CONFIG } from "@/constants/config";
 import { MessageCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
@@ -195,7 +196,7 @@ export default function OnlineFriendsBar({ currentUserId }: { currentUserId: str
                     <View style={{ flex: 1, marginLeft: 12 }}>
                       <Text style={styles.modalRowName}>{name}</Text>
                       <Text style={styles.modalRowStatus} numberOfLines={1}>
-                        {f.status || "Hey there! I am using BlinkChat"}
+                        {f.status || `Hey there! I am using ${APP_CONFIG.appName}`}
                       </Text>
                     </View>
                     <TouchableOpacity

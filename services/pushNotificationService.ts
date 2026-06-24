@@ -1,6 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { supabase } from "../lib/supabase";
+import { APP_CONFIG } from "../constants/config";
 
 // Configure how notifications are handled when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -64,6 +65,13 @@ export async function sendPushNotification(
   if (!fcmServerKey) {
     console.warn(
       "Firebase FCM Server Key (EXPO_PUBLIC_FCM_SERVER_KEY) is not defined in .env. Skipping push notification."
+    );
+    return null;
+  }
+
+  if (fcmServerKey.includes(":") || fcmServerKey.startsWith("1:")) {
+    console.warn(
+      "CRITICAL CONFIG ERROR: EXPO_PUBLIC_FCM_SERVER_KEY in your .env appears to be a Firebase App ID (e.g. 1:xxxx) rather than the actual legacy Cloud Messaging Server Key (starts with AAAA...). Push notifications will fail with 401 Unauthorized."
     );
     return null;
   }
@@ -197,7 +205,7 @@ export async function sendPushForNewEmployee(
     if (employeeError || !employee || !employee.push_token) return;
 
     const title = `Welcome to ${company.name}`;
-    const body = `You have been added as an employee to ${company.name} on BlinkChat!`;
+     const body = `You have been added as an employee to ${company.name} on ${APP_CONFIG.appName}!`;
 
     await sendPushNotification(employee.push_token, title, body, {
       companyId,
@@ -205,5 +213,28 @@ export async function sendPushForNewEmployee(
     });
   } catch (error) {
     console.error("Error in sendPushForNewEmployee:", error);
+  }
+}
+
+/**
+ * Trigger an immediate local notification (useful for testing and real-time fallbacks in Expo Go).
+ */
+export async function triggerLocalNotification(
+  title: string,
+  body: string,
+  data?: any
+) {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: data || {},
+        sound: true,
+      },
+      trigger: null, // deliver immediately
+    });
+  } catch (error) {
+    console.error("Local notification scheduling error:", error);
   }
 }

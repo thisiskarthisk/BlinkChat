@@ -1,9 +1,5 @@
-import { Text, View } from "react-native";
+import { Redirect } from "expo-router";
 
-export default function ProfileScreen() {
-  return (
-    <View>
-      <Text>Profile Screen</Text>
-    </View>
-  );
+export default function ProfileRedirect() {
+  return <Redirect href={"/(tabs)/profile" as any} />;
 }

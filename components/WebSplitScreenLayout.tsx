@@ -19,11 +19,17 @@ import {
   Send,
   Paperclip,
   Camera,
+  Image as ImageIcon,
+  Plus,
 } from "lucide-react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
 import { supabase } from "@/lib/supabase";
-import { createOrGetChat } from "@/services/chatService";
+import { createOrGetChat, ensureCompanyChats, sendMessage } from "@/services/chatService";
+import { getCachedMessages } from "@/services/storageService";
+import { APP_CONFIG } from "@/constants/config";
+import { sendPushForNewEmployee } from "@/services/pushNotificationService";
+import { createClient } from "@supabase/supabase-js";
 
 function getInitials(name: string) {
   if (!name) return "?";
@@ -47,6 +53,121 @@ function formatTime(isoString?: string) {
   return date.toLocaleDateString([], { day: "2-digit", month: "2-digit" });
 }
 
+const BUBBLE_THEMES: Record<string, {
+  myBubbleBg: string;
+  myText: string;
+  otherBubbleBg: string;
+  otherText: string;
+  otherBorder?: string;
+  myTime: string;
+  otherTime: string;
+}> = {
+  bg_default: {
+    myBubbleBg: "#2563EB",
+    myText: "#FFFFFF",
+    otherBubbleBg: "#FFFFFF",
+    otherText: "#1E293B",
+    otherBorder: "#E5E7EB",
+    myTime: "rgba(255, 255, 255, 0.7)",
+    otherTime: "#6B7280",
+  },
+  bg_whatsapp: {
+    myBubbleBg: "#DCF8C6",
+    myText: "#1C2E1A",
+    otherBubbleBg: "#FFFFFF",
+    otherText: "#1F2937",
+    otherBorder: "#E5E7EB",
+    myTime: "rgba(0, 0, 0, 0.45)",
+    otherTime: "rgba(0, 0, 0, 0.45)",
+  },
+  bg_ocean: {
+    myBubbleBg: "#0284C7",
+    myText: "#FFFFFF",
+    otherBubbleBg: "#F0F9FF",
+    otherText: "#0369A1",
+    otherBorder: "#BAE6FD",
+    myTime: "rgba(255, 255, 255, 0.7)",
+    otherTime: "#0369A1",
+  },
+  bg_lavender: {
+    myBubbleBg: "#7C3AED",
+    myText: "#FFFFFF",
+    otherBubbleBg: "#FAF5FF",
+    otherText: "#6B21A8",
+    otherBorder: "#E9D5FF",
+    myTime: "rgba(255, 255, 255, 0.7)",
+    otherTime: "#6B21A8",
+  },
+  bg_dark: {
+    myBubbleBg: "#334155",
+    myText: "#FFFFFF",
+    otherBubbleBg: "#1E293B",
+    otherText: "#E2E8F0",
+    otherBorder: "#475569",
+    myTime: "rgba(255, 255, 255, 0.7)",
+    otherTime: "#94A3B8",
+  },
+};
+
+const triggerWebDownload = async (url: string, filename: string) => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename || "file";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    console.error("Web download error, falling back to window.open:", error);
+    window.open(url, "_blank");
+  }
+};
+
+const isAudioMessage = (item: any) => {
+  if (!item) return false;
+  const type = item.message_type;
+  if (type === "audio") return true;
+  if (type === "file") {
+    const name = item.file_name || item.message || "";
+    const lower = name.toLowerCase();
+    return lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".m4a") || lower.endsWith(".aac") || lower.endsWith(".ogg") || lower.endsWith(".webm") || lower.endsWith(".mpga");
+  }
+  return false;
+};
+
+function getMessagePreview(lastMessage: any) {
+  if (!lastMessage) return "No messages yet";
+  const type = lastMessage.message_type || "text";
+  const message = lastMessage.message || "";
+  
+  if (type === "image") return "📷 Photo";
+  if (type === "video") return "🎥 Video";
+  if (type === "audio") return "🎤 Voice Message";
+  if (type === "file") {
+    if (isAudioMessage(lastMessage)) {
+      return `🎵 ${lastMessage.file_name || "Audio File"}`;
+    }
+    return `📄 ${lastMessage.file_name || "File"}`;
+  }
+  if (type === "location") return "📍 Location";
+  if (type === "live_location") return "📍 Live Location";
+  
+  let cleanText = message;
+  if (cleanText.startsWith("|||reply_id:")) {
+    const parts = cleanText.split("|||");
+    cleanText = parts[parts.length - 1] || "";
+  }
+  if (cleanText.startsWith("|||forwarded:true|||")) {
+    cleanText = cleanText.substring("|||forwarded:true|||".length);
+  }
+  
+  return cleanText;
+}
+
 export default function WebSplitScreenLayout() {
   const { user, profile, signOut, updateProfile } = useAuth();
   const { colors } = useTheme();
@@ -63,6 +184,35 @@ export default function WebSplitScreenLayout() {
   const [messages, setMessages] = useState<any[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [sendingMsg, setSendingMsg] = useState(false);
+  const [showWebMediaVault, setShowWebMediaVault] = useState(false);
+  const [webMediaItems, setWebMediaItems] = useState<any[]>([]);
+  const [backgroundConfig, setBackgroundConfig] = useState<{
+    type: "color" | "image";
+    value: string;
+    id?: string;
+  }>({ type: "color", value: "#EEF2FF", id: "bg_default" });
+
+  useEffect(() => {
+    const loadBackgroundConfig = async () => {
+      if (!activeChat?.profile?.id || !user?.id) return;
+      try {
+        const type = await AsyncStorage.getItem(`chat_bg_type_${user.id}_${activeChat.profile.id}`);
+        if (type === "image") {
+          const uri = await AsyncStorage.getItem(`chat_image_uri_${user.id}_${activeChat.profile.id}`);
+          if (uri) {
+            setBackgroundConfig({ type: "image", value: uri, id: "custom_image" });
+            return;
+          }
+        }
+        const colorId = await AsyncStorage.getItem(`chat_color_id_${user.id}_${activeChat.profile.id}`) || "bg_default";
+        const hex = await AsyncStorage.getItem(`chat_color_hex_${user.id}_${activeChat.profile.id}`);
+        setBackgroundConfig({ type: "color", value: hex || "#EEF2FF", id: colorId });
+      } catch (e) {
+        console.error("Load web BG error:", e);
+      }
+    };
+    loadBackgroundConfig();
+  }, [activeChat?.profile?.id, user?.id]);
 
   // Settings / All Users States
   const [allUsers, setAllUsers] = useState<any[]>([]);
@@ -79,6 +229,14 @@ export default function WebSplitScreenLayout() {
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
+
+  // Create Employee States
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Ref
   const messageEndRef = useRef<any>(null);
@@ -156,7 +314,7 @@ export default function WebSplitScreenLayout() {
     if (profile) {
       setEditFullName(profile.full_name || "");
       setEditUsername(profile.username || "");
-      setEditStatus(profile.status || "Hey there! I am using BlinkChat");
+      setEditStatus(profile.status || `Hey there! I am using ${APP_CONFIG.appName}`);
       setEditAvatarUrl(profile.avatar_url || "");
       if (profile.company_id || profile.company_name) {
         loadCompanyUsers(profile.company_id || profile.company_name || "");
@@ -387,6 +545,35 @@ export default function WebSplitScreenLayout() {
       supabase.removeChannel(channel);
     };
   }, [user?.id]);
+
+  const loadWebMediaItems = async (chatId: string) => {
+    try {
+      const cachedMessages = await getCachedMessages(chatId);
+      const items = cachedMessages
+        .filter((m: any) => ["image", "video", "audio", "file"].includes(m.message_type))
+        .map((m: any) => ({
+          id: m.id,
+          message_type: m.message_type,
+          message: m.message,
+          media_path: m.media_path,
+          file_name: m.file_name,
+          created_at: m.created_at,
+          sender_id: m.sender_id,
+        }));
+      items.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setWebMediaItems(items);
+    } catch (e) {
+      console.error("loadWebMediaItems error:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeChat?.chat_id) {
+      loadWebMediaItems(activeChat.chat_id);
+    } else {
+      setWebMediaItems([]);
+    }
+  }, [activeChat?.chat_id, messages]);
 
   // Load active chat messages
   const loadMessages = async (chatId: string) => {
@@ -657,6 +844,133 @@ export default function WebSplitScreenLayout() {
     }
   };
 
+  // Create employee account
+  const handleCreateEmployee = async () => {
+    if (!fullName.trim() || !username.trim() || !email.trim() || !password) {
+      alert("Please fill in all fields.");
+      return;
+    }
+    if (password.length < 6) {
+      alert("Password must be at least 6 characters.");
+      return;
+    }
+    if (!profile?.company_id) {
+      alert("Company details not resolved.");
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || "").trim();
+      const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "").trim();
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("Supabase URL and Anon Key are not defined.");
+      }
+
+      // Create standalone non-session-persisting client
+      const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      });
+
+      const usernameClean = username.trim().toLowerCase().replace(/\s+/g, "_");
+
+      // Verify username uniqueness
+      const { data: existingUser } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", usernameClean)
+        .maybeSingle();
+
+      if (existingUser) {
+        alert("Username already taken. Try another.");
+        setActionLoading(false);
+        return;
+      }
+
+      // Signup auth user
+      const { data, error: signUpError } = await tempClient.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          data: {
+            full_name: fullName.trim(),
+            username: usernameClean,
+            is_company_admin: false,
+            company_id: profile.company_id,
+          },
+        },
+      });
+
+      if (signUpError) throw signUpError;
+
+      if (data.user) {
+        if (data.user.identities && data.user.identities.length === 0) {
+          alert("This email address is already registered.");
+          setActionLoading(false);
+          return;
+        }
+
+        // Insert employee profile
+        const { error: profileError } = await supabase.from("profiles").upsert({
+          id: data.user.id,
+          full_name: fullName.trim(),
+          username: usernameClean,
+          phone: null,
+          email: email.trim().toLowerCase(),
+          status: `Hey there! I am using ${APP_CONFIG.appName}`,
+          is_online: false,
+          company_id: profile.company_id,
+          is_company_admin: false,
+          is_company_account: true,
+        });
+
+        if (profileError) throw profileError;
+
+        // Auto-create chat rooms with other members
+        await ensureCompanyChats(profile.company_id, data.user.id);
+
+        // Send a welcome message in the direct chat from admin to the new employee
+        if (user?.id) {
+          const chatId = await createOrGetChat(user.id, data.user.id);
+          if (chatId) {
+            const welcomeMsg = `Welcome to the company! Your account has been successfully created. You can now chat securely with all members of our organization.
+
+Here are your login credentials:
+Email: ${email.trim().toLowerCase()}
+Password: ${password}
+
+Please log in and update your password under settings.`;
+            await sendMessage(chatId, user.id, welcomeMsg);
+          }
+        }
+
+        // Trigger push notification for new employee creation
+        sendPushForNewEmployee(data.user.id, profile.company_id);
+
+        // Reset inputs & close modal
+        setFullName("");
+        setUsername("");
+        setEmail("");
+        setPassword("");
+        setShowCreateModal(false);
+
+        alert(`Employee account created for ${fullName.trim()}!`);
+        if (profile.company_id || profile.company_name) {
+          loadCompanyUsers(profile.company_id || profile.company_name || "");
+        }
+      }
+    } catch (e: any) {
+      alert(e.message || "Failed to create employee account.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Search filtered users in Settings tab
   const filteredUsers = allUsers.filter((u) => {
     const term = usersSearch.toLowerCase();
@@ -807,11 +1121,7 @@ export default function WebSplitScreenLayout() {
 
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
                           <Text style={[styles.chatCardLastMsg, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {item.lastMessage?.message_type === "image" ? "📷 Photo"
-                              : item.lastMessage?.message_type === "video" ? "🎥 Video"
-                              : item.lastMessage?.message_type === "audio" ? "🎤 Voice Message"
-                              : item.lastMessage?.message_type === "file" ? `📄 ${item.lastMessage?.file_name || "File"}`
-                              : item.lastMessage?.message || "No messages yet"}
+                            {getMessagePreview(item.lastMessage)}
                           </Text>
                           {item.unreadCount > 0 && (
                             <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
@@ -960,11 +1270,31 @@ export default function WebSplitScreenLayout() {
         {/* Dashboard Tab Middle Panel */}
         {activeTab === "dashboard" && profile?.is_company_admin && (
           <View style={styles.paneContent}>
-            <View style={styles.paneHeader}>
-              <Text style={[styles.paneTitle, { color: colors.text }]}>Admin Dashboard</Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
-                {profile?.company_name || "Company Management"}
-              </Text>
+            <View style={[styles.paneHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.paneTitle, { color: colors.text }]}>Admin Dashboard</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
+                  {profile?.company_name || "Company Management"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.accent,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  shadowColor: colors.accent,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                }}
+                onPress={() => setShowCreateModal(true)}
+              >
+                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 13 }}>Create Employee</Text>
+              </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
@@ -1074,143 +1404,347 @@ export default function WebSplitScreenLayout() {
                   {activeChat.profile?.is_online ? "● Online" : "Offline"}
                 </Text>
               </View>
+
+              {/* Media Vault Toggle Button */}
+              <TouchableOpacity
+                style={{
+                  padding: 8,
+                  borderRadius: 20,
+                  backgroundColor: showWebMediaVault ? colors.accent + "15" : "transparent",
+                  marginRight: 8,
+                }}
+                onPress={() => setShowWebMediaVault(!showWebMediaVault)}
+              >
+                <ImageIcon size={20} color={showWebMediaVault ? colors.accent : colors.textSecondary} />
+              </TouchableOpacity>
             </View>
 
-            {/* Message History List */}
-            <ScrollView
-              ref={messageEndRef}
-              style={{ flex: 1, padding: 24 }}
-              contentContainerStyle={{ paddingBottom: 24 }}
-              onContentSizeChange={scrollToBottom}
-              showsVerticalScrollIndicator={false}
-            >
-              {messages.map((item) => {
-                const isMine = item.sender_id === user?.id;
-                
-                // Construct file URL if media_path exists
-                let imageUrl = null;
-                if (item.media_path) {
-                  imageUrl = supabase.storage.from("chat-media").getPublicUrl(item.media_path).data.publicUrl;
-                }
+            <View style={{ flex: 1, flexDirection: "row" }}>
+              <View style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", backgroundColor: backgroundConfig.type === "color" ? backgroundConfig.value : undefined }}>
+                {backgroundConfig.type === "image" && (
+                  <Image 
+                    source={{ uri: backgroundConfig.value }} 
+                    style={StyleSheet.absoluteFillObject}
+                    resizeMode="cover"
+                  />
+                )}
+                {/* Message History List */}
+                <ScrollView
+                  ref={messageEndRef}
+                  style={{ flex: 1, padding: 24 }}
+                  contentContainerStyle={{ paddingBottom: 24 }}
+                  onContentSizeChange={scrollToBottom}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {messages.map((item) => {
+                    const isMine = item.sender_id === user?.id;
+                    
+                    // Construct file URL if media_path exists
+                    let imageUrl = null;
+                    if (item.media_path) {
+                      imageUrl = supabase.storage.from("chat-media").getPublicUrl(item.media_path).data.publicUrl;
+                    }
 
-                return (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.messageRow,
-                      { justifyContent: isMine ? "flex-end" : "flex-start" }
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.messageBubble,
-                        {
-                          backgroundColor: isMine ? colors.accent : colors.surface,
-                          borderTopRightRadius: isMine ? 4 : 20,
-                          borderTopLeftRadius: isMine ? 20 : 4,
-                        }
-                      ]}
-                    >
-                      {/* Image render */}
-                      {item.message_type === "image" && imageUrl && (
-                        <Image source={{ uri: imageUrl }} style={styles.messageImage} resizeMode="cover" />
-                      )}
+                    const initials = getInitials(activeChat?.profile?.full_name || activeChat?.profile?.username || "U");
+                    const activeThemeId = backgroundConfig.id && BUBBLE_THEMES[backgroundConfig.id] ? backgroundConfig.id : (backgroundConfig.type === "image" ? "bg_whatsapp" : "bg_default");
+                    const theme = BUBBLE_THEMES[activeThemeId] || BUBBLE_THEMES.bg_default;
 
-                      {/* Video render */}
-                      {item.message_type === "video" && imageUrl && (
-                        <video 
-                          src={imageUrl} 
-                          controls 
-                          style={{ 
-                            maxWidth: "100%", 
-                            maxHeight: 200, 
-                            borderRadius: 8, 
-                            marginTop: 4,
-                            outline: "none" 
-                          }} 
-                        />
-                      )}
+                    // Parse caption from message if it exists
+                    let caption = "";
+                    let baseMessage = item.message;
+                    if (item.message && item.message.includes("|||caption:")) {
+                      const parts = item.message.split("|||caption:");
+                      baseMessage = parts[0];
+                      caption = parts[1];
+                    }
+                    const mediaUrl = imageUrl || baseMessage;
 
-                      {/* Audio/Voice render */}
-                      {item.message_type === "audio" && imageUrl && (
-                        <audio 
-                          src={imageUrl} 
-                          controls 
-                          style={{ 
-                            width: 220, 
-                            marginTop: 4,
-                            outline: "none" 
-                          }} 
-                        />
-                      )}
-
-                      {/* File render */}
-                      {item.message_type === "file" && imageUrl && (
-                        <a 
-                          href={imageUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          style={{ 
-                            display: "flex", 
-                            alignItems: "center", 
-                            gap: 8, 
-                            color: isMine ? "#FFF" : colors.accent, 
-                            textDecoration: "underline", 
-                            marginTop: 4,
-                            fontSize: 14,
-                            fontWeight: "500"
-                          }}
-                        >
-                          📄 {item.file_name || "Download File"}
-                        </a>
-                      )}
-
-                      {/* Text render */}
-                      {(item.message_type === "text" || !item.message_type) && (
-                        <Text style={[styles.messageText, { color: isMine ? "#FFF" : colors.text }]}>
-                          {item.message}
-                        </Text>
-                      )}
-                      
-                      {/* Meta information */}
-                      <View style={styles.messageMeta}>
-                        <Text style={[styles.messageTime, { color: isMine ? "rgba(255,255,255,0.7)" : colors.textSecondary }]}>
-                          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </Text>
-                        {isMine && (
-                          <Text style={{ fontSize: 10, color: item.is_seen ? "#60A5FA" : "rgba(255,255,255,0.7)", marginLeft: 4 }}>
-                            {item.is_seen || item.is_delivered ? "✓✓" : "✓"}
-                          </Text>
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.messageRow,
+                          { justifyContent: isMine ? "flex-end" : "flex-start", alignItems: "flex-end" }
+                        ]}
+                      >
+                        {!isMine && (
+                          <View style={{ marginRight: 8, marginBottom: 4 }}>
+                            {activeChat?.profile?.avatar_url ? (
+                              <Image source={{ uri: activeChat.profile.avatar_url }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                            ) : (
+                              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" }}>
+                                <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "700" }}>{initials}</Text>
+                              </View>
+                            )}
+                          </View>
                         )}
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
+                        <View
+                          style={[
+                            styles.messageBubble,
+                            {
+                              backgroundColor: isMine ? theme.myBubbleBg : theme.otherBubbleBg,
+                              borderTopRightRadius: isMine ? 4 : 20,
+                              borderTopLeftRadius: isMine ? 20 : 4,
+                              borderWidth: !isMine && theme.otherBorder ? 0.5 : 0,
+                              borderColor: !isMine ? theme.otherBorder : undefined,
+                            }
+                          ]}
+                        >
+                          {/* Image render */}
+                          {item.message_type === "image" && mediaUrl && (
+                            <View>
+                              <TouchableOpacity onPress={() => triggerWebDownload(mediaUrl, item.file_name || "image.jpg")} activeOpacity={0.85}>
+                                <Image source={{ uri: mediaUrl }} style={styles.messageImage} resizeMode="cover" />
+                              </TouchableOpacity>
+                              {caption ? (
+                                <Text style={[styles.messageText, { marginTop: 6, color: isMine ? theme.myText : theme.otherText }]}>
+                                  {caption}
+                                </Text>
+                              ) : null}
+                            </View>
+                          )}
 
-            {/* Chat Pane Footer Message Input */}
-            <View style={[styles.chatPaneFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-              <TouchableOpacity style={styles.attachBtn} onPress={() => triggerFileUpload("chat")}>
-                <Paperclip size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-              
-              <TextInput
-                style={[styles.chatInputField, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                value={msgInput}
-                onChangeText={setMsgInput}
-                placeholder="Type a message..."
-                placeholderTextColor={colors.textSecondary}
-                onSubmitEditing={handleSendMessage}
-              />
-              
-              <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: colors.accent }]}
-                onPress={handleSendMessage}
-                disabled={sendingMsg}
-              >
-                <Send size={18} color="#FFF" />
-              </TouchableOpacity>
+                          {/* Video render */}
+                          {item.message_type === "video" && mediaUrl && (
+                            <View>
+                              <video 
+                                src={mediaUrl} 
+                                controls 
+                                style={{ 
+                                  maxWidth: "100%", 
+                                  maxHeight: 200, 
+                                  borderRadius: 8, 
+                                  marginTop: 4,
+                                  outline: "none" 
+                                }} 
+                              />
+                              <TouchableOpacity 
+                                onPress={() => triggerWebDownload(mediaUrl, item.file_name || "video.mp4")}
+                                style={{ 
+                                  flexDirection: "row", 
+                                  alignItems: "center", 
+                                  marginTop: 6,
+                                  gap: 4 
+                                }}
+                              >
+                                <Text style={{ 
+                                  fontSize: 12, 
+                                  color: isMine ? theme.myText : colors.accent,
+                                  textDecorationLine: "underline"
+                                }}>
+                                  📥 Download Video
+                                </Text>
+                              </TouchableOpacity>
+                              {caption ? (
+                                <Text style={[styles.messageText, { marginTop: 6, color: isMine ? theme.myText : theme.otherText }]}>
+                                  {caption}
+                                </Text>
+                              ) : null}
+                            </View>
+                          )}
+
+                          {/* Audio/Voice render */}
+                          {(item.message_type === "audio" || (item.message_type === "file" && isAudioMessage(item))) && mediaUrl && (
+                            <View>
+                              <audio 
+                                src={mediaUrl} 
+                                controls 
+                                style={{ 
+                                  width: 220, 
+                                  marginTop: 4,
+                                  outline: "none" 
+                                }} 
+                              />
+                              <TouchableOpacity 
+                                onPress={() => triggerWebDownload(mediaUrl, item.file_name || "audio.mp3")}
+                                style={{ 
+                                  flexDirection: "row", 
+                                  alignItems: "center", 
+                                  marginTop: 6,
+                                  gap: 4 
+                                }}
+                              >
+                                <Text style={{ 
+                                  fontSize: 12, 
+                                  color: isMine ? theme.myText : colors.accent,
+                                  textDecorationLine: "underline"
+                                }}>
+                                  📥 Download Audio
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+
+                          {/* File render */}
+                          {item.message_type === "file" && !isAudioMessage(item) && mediaUrl && (
+                            <View>
+                              <TouchableOpacity
+                                onPress={() => triggerWebDownload(mediaUrl, item.file_name || "file")}
+                                style={{ 
+                                  display: "flex", 
+                                  flexDirection: "row",
+                                  alignItems: "center", 
+                                  gap: 8, 
+                                  marginTop: 4,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    color: isMine ? theme.myText : (theme.otherText !== "#1E293B" ? theme.otherText : colors.accent), 
+                                    textDecorationLine: "underline", 
+                                    fontSize: 14,
+                                    fontWeight: "500"
+                                  }}
+                                >
+                                  📄 {item.file_name || "Download File"}
+                                </Text>
+                              </TouchableOpacity>
+                              {caption ? (
+                                <Text style={[styles.messageText, { marginTop: 6, color: isMine ? theme.myText : theme.otherText }]}>
+                                  {caption}
+                                </Text>
+                              ) : null}
+                            </View>
+                          )}
+
+                          {/* Location render */}
+                          {item.message_type === "location" && (() => {
+                            const parts = item.message.split(",");
+                            const lat = parts[0] || "0";
+                            const lng = parts[1] || "0";
+                            const staticMapUrl = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=14&l=map&size=300,150&pt=${lng},${lat},pm2rdl`;
+                            return (
+                              <a 
+                                href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                style={{ 
+                                  display: "block",
+                                  textDecoration: "none",
+                                  width: 300,
+                                }}
+                              >
+                                <Image 
+                                  source={{ uri: staticMapUrl }} 
+                                  style={{ width: 300, height: 150, borderRadius: 12, backgroundColor: "#E5E7EB" }} 
+                                  resizeMode="cover" 
+                                />
+                                <div style={{ marginTop: 8, paddingLeft: 4, paddingRight: 4 }}>
+                                  <div style={{ fontSize: 13, fontWeight: "700", color: isMine ? theme.myText : theme.otherText }}>Shared Location</div>
+                                  <div style={{ fontSize: 10, marginTop: 2, color: isMine ? theme.myText : theme.otherText, opacity: 0.8 }}>Click to view on Google Maps</div>
+                                </div>
+                              </a>
+                            );
+                          })()}
+
+                          {/* Text render */}
+                          {(item.message_type === "text" || !item.message_type) && (
+                            <Text style={[styles.messageText, { color: isMine ? theme.myText : theme.otherText }]}>
+                              {item.message}
+                            </Text>
+                          )}
+                          
+                          {/* Meta information */}
+                          <View style={styles.messageMeta}>
+                            <Text style={[styles.messageTime, { color: isMine ? theme.myTime : theme.otherTime }]}>
+                              {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Text>
+                            {isMine && (
+                              <Text style={{ fontSize: 10, color: item.is_seen ? "#60A5FA" : "rgba(255,255,255,0.7)", marginLeft: 4 }}>
+                                {item.is_seen || item.is_delivered ? "✓✓" : "✓"}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Chat Pane Footer Message Input */}
+                <View style={[styles.chatPaneFooter, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+                  <TouchableOpacity style={styles.attachBtn} onPress={() => triggerFileUpload("chat")}>
+                    <Paperclip size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  
+                  <TextInput
+                    style={[styles.chatInputField, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    value={msgInput}
+                    onChangeText={setMsgInput}
+                    placeholder="Type a message..."
+                    placeholderTextColor={colors.textSecondary}
+                    onSubmitEditing={handleSendMessage}
+                  />
+                  
+                  <TouchableOpacity
+                    style={[styles.sendBtn, { backgroundColor: colors.accent }]}
+                    onPress={handleSendMessage}
+                    disabled={sendingMsg}
+                  >
+                    <Send size={18} color="#FFF" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Web Media Vault Sidebar Panel */}
+              {showWebMediaVault && (
+                <View style={{ width: 320, borderLeftWidth: 1, borderLeftColor: colors.border, backgroundColor: colors.surface, display: "flex", flexDirection: "column" }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>Media Vault</Text>
+                    <TouchableOpacity onPress={() => setShowWebMediaVault(false)}>
+                      <Text style={{ color: colors.textSecondary, fontSize: 18, fontWeight: "600" }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView style={{ flex: 1, padding: 16 }} showsVerticalScrollIndicator={false}>
+                    {webMediaItems.length === 0 ? (
+                      <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>No shared files or media found.</Text>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                        {webMediaItems.map((item) => {
+                          let pubUrl = item.message;
+                          if (!pubUrl && item.media_path) {
+                            pubUrl = item.media_path;
+                          }
+                          if (pubUrl && !pubUrl.startsWith("http") && !pubUrl.startsWith("file") && !pubUrl.startsWith("content")) {
+                            pubUrl = supabase.storage.from("chat-media").getPublicUrl(pubUrl).data.publicUrl;
+                          }
+
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              style={{
+                                width: 84,
+                                height: 84,
+                                borderRadius: 8,
+                                overflow: "hidden",
+                                borderWidth: 1,
+                                borderColor: colors.border,
+                                backgroundColor: colors.background,
+                              }}
+                              onPress={() => triggerWebDownload(pubUrl, item.file_name || (item.message_type === "image" ? "image.jpg" : item.message_type === "video" ? "video.mp4" : "file"))}
+                            >
+                              {item.message_type === "image" ? (
+                                <Image source={{ uri: pubUrl }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                              ) : (
+                                <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 4 }}>
+                                  <Text style={{ fontSize: 20 }}>
+                                    {item.message_type === "video" ? "🎥" : item.message_type === "audio" ? "🎤" : "📄"}
+                                  </Text>
+                                  <Text style={{ fontSize: 9, color: colors.text, textAlign: "center", marginTop: 4 }} numberOfLines={1}>
+                                    {item.message_type === "video" ? "Video" : item.message_type === "audio" ? "Audio" : item.file_name || "Doc"}
+                                  </Text>
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </ScrollView>
+                </View>
+              )}
             </View>
           </View>
         ) : (
@@ -1219,13 +1753,93 @@ export default function WebSplitScreenLayout() {
             <View style={[styles.splashIconBg, { backgroundColor: colors.surface }]}>
               <Text style={{ fontSize: 72 }}>💬</Text>
             </View>
-            <Text style={[styles.splashTitle, { color: colors.text }]}>BlinkChat Web</Text>
+            <Text style={[styles.splashTitle, { color: colors.text }]}>{APP_CONFIG.appName} Web</Text>
             <Text style={[styles.splashDesc, { color: colors.textSecondary }]}>
               Send and receive messages instantly. Select a chat from the left panel to begin.
             </Text>
           </View>
         )}
       </View>
+
+      {/* CREATE EMPLOYEE MODAL (Web style absolute overlay) */}
+      {showCreateModal && (
+        <View style={styles.webModalOverlay}>
+          <View style={[styles.webModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.webModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.webModalTitle, { color: colors.text }]}>Create Employee Account</Text>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)} style={styles.webModalCloseBtn}>
+                <Text style={{ fontSize: 18, color: colors.textSecondary, fontWeight: "600" }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              <View style={styles.webFormGroup}>
+                <Text style={[styles.webFormLabel, { color: colors.text }]}>Full Name</Text>
+                <TextInput
+                  style={[styles.webFormInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  placeholder="e.g. John Doe"
+                  placeholderTextColor={colors.textSecondary}
+                  value={fullName}
+                  onChangeText={setFullName}
+                />
+              </View>
+
+              <View style={styles.webFormGroup}>
+                <Text style={[styles.webFormLabel, { color: colors.text }]}>Username</Text>
+                <TextInput
+                  style={[styles.webFormInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  placeholder="e.g. johndoe"
+                  placeholderTextColor={colors.textSecondary}
+                  value={username}
+                  onChangeText={setUsername}
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.webFormGroup}>
+                <Text style={[styles.webFormLabel, { color: colors.text }]}>Email Address</Text>
+                <TextInput
+                  style={[styles.webFormInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  placeholder="e.g. john@company.com"
+                  placeholderTextColor={colors.textSecondary}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              </View>
+
+              <View style={styles.webFormGroup}>
+                <Text style={[styles.webFormLabel, { color: colors.text }]}>Temporary Password</Text>
+                <TextInput
+                  style={[styles.webFormInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  placeholder="At least 6 characters"
+                  placeholderTextColor={colors.textSecondary}
+                  value={password}
+                  onChangeText={setPassword}
+                  autoCapitalize="none"
+                  secureTextEntry
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.webSubmitBtn,
+                  { backgroundColor: colors.accent, opacity: actionLoading ? 0.7 : 1 }
+                ]}
+                onPress={handleCreateEmployee}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.webSubmitBtnText}>Create Employee Profile</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1644,5 +2258,68 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 350,
     lineHeight: 22,
+  },
+  webModalOverlay: {
+    position: "fixed" as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 9999,
+  },
+  webModalContent: {
+    width: "100%",
+    maxWidth: 500,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 30,
+  },
+  webModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+  },
+  webModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  webModalCloseBtn: {
+    padding: 4,
+  },
+  webFormGroup: {
+    marginBottom: 16,
+  },
+  webFormLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  webFormInput: {
+    height: 44,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  webSubmitBtn: {
+    height: 48,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  webSubmitBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

@@ -16,11 +16,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { APP_CONFIG } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
+import { useTheme } from "../../hooks/use-theme";
 
 const { width } = Dimensions.get('window');
 
 export default function LoginScreen() {
+  const { colors, isDark } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -132,7 +135,12 @@ export default function LoginScreen() {
             }
           }
         )
-        .subscribe();
+        .subscribe((status, err) => {
+          console.log(`Web QR subscription status for channel device-link-${token}:`, status);
+          if (err) {
+            console.error("Web QR subscription error:", err);
+          }
+        });
 
       // Expire token after 2 minutes
       timer = setTimeout(async () => {
@@ -203,12 +211,12 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.backgroundDecoration}>
-        <View style={[styles.circle, styles.circle1]} />
-        <View style={[styles.circle, styles.circle2]} />
+        <View style={[styles.circle, styles.circle1, { backgroundColor: colors.accent, opacity: 0.08 }]} />
+        <View style={[styles.circle, styles.circle2, { backgroundColor: colors.accent, opacity: 0.05 }]} />
       </View>
 
       <ScrollView
@@ -217,53 +225,78 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerArea}>
-          <View style={styles.logoContainer}>
-             <Text style={styles.logoEmoji}>💬</Text>
+          <View style={[styles.logoContainer, { backgroundColor: colors.accent, shadowColor: colors.accent, overflow: "hidden" }]}>
+             <Image
+               source={require("../../assets/images/icon.png")}
+               style={{ width: "100%", height: "100%" }}
+               resizeMode="cover"
+             />
           </View>
-          <Text style={styles.welcomeText}>Welcome Back</Text>
-          <Text style={styles.subText}>Sign in to continue your conversations</Text>
+          <Text style={[styles.welcomeText, { color: colors.text }]}>Welcome Back</Text>
+          <Text style={[styles.subText, { color: colors.textSecondary }]}>Sign in to continue your conversations</Text>
         </View>
 
         <View style={Platform.OS === 'web' ? styles.webCardWrapper : null}>
+          {Platform.OS === 'web' && (
+            <View style={[styles.selectorContainer, { alignSelf: 'center', width: '100%', maxWidth: 500, marginBottom: 20, backgroundColor: colors.backgroundElement }]}>
+              <TouchableOpacity
+                style={[styles.selectorBtn, loginMode === "qr" && [styles.selectorBtnActive, { backgroundColor: colors.cardBg }]]}
+                onPress={() => setLoginMode("qr")}
+              >
+                <Text style={[styles.selectorBtnText, { color: colors.textSecondary }, loginMode === "qr" && [styles.selectorBtnTextActive, { color: colors.text }]]}>
+                  Personal (QR Scan)
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.selectorBtn, loginMode === "email" && [styles.selectorBtnActive, { backgroundColor: colors.cardBg }]]}
+                onPress={() => setLoginMode("email")}
+              >
+                <Text style={[styles.selectorBtnText, { color: colors.textSecondary }, loginMode === "email" && [styles.selectorBtnTextActive, { color: colors.text }]]}>
+                  Company Admin & Staff
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {Platform.OS === 'web' && loginMode === "qr" ? (
             /* WhatsApp Web QR Login Layout */
-            <View style={styles.webContainer}>
+            <View style={[styles.webContainer, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}>
               <View style={styles.webLeftCol}>
-                <Text style={styles.webTitle}>Use BlinkChat on your computer</Text>
+                <Text style={[styles.webTitle, { color: colors.text }]}>Use {APP_CONFIG.appName} on your computer</Text>
                 
                 <View style={styles.webStepList}>
                   <View style={styles.webStepItem}>
-                    <View style={styles.webStepNumber}>
-                      <Text style={styles.webStepNumberText}>1</Text>
+                    <View style={[styles.webStepNumber, { backgroundColor: colors.backgroundElement }]}>
+                      <Text style={[styles.webStepNumberText, { color: colors.textSecondary }]}>1</Text>
                     </View>
-                    <Text style={styles.webStepText}>
-                      Open <Text style={styles.webStepHighlight}>BlinkChat</Text> on your phone
+                    <Text style={[styles.webStepText, { color: colors.textSecondary }]}>
+                      Open <Text style={[styles.webStepHighlight, { color: colors.text }]}>{APP_CONFIG.appName}</Text> on your phone
                     </Text>
                   </View>
 
                   <View style={styles.webStepItem}>
-                    <View style={styles.webStepNumber}>
-                      <Text style={styles.webStepNumberText}>2</Text>
+                    <View style={[styles.webStepNumber, { backgroundColor: colors.backgroundElement }]}>
+                      <Text style={[styles.webStepNumberText, { color: colors.textSecondary }]}>2</Text>
                     </View>
-                    <Text style={styles.webStepText}>
-                      Tap <Text style={styles.webStepHighlight}>Settings ⚙️</Text> and select <Text style={styles.webStepHighlight}>Linked Devices</Text>
+                    <Text style={[styles.webStepText, { color: colors.textSecondary }]}>
+                      Tap <Text style={[styles.webStepHighlight, { color: colors.text }]}>Settings ⚙️</Text> and select <Text style={[styles.webStepHighlight, { color: colors.text }]}>Linked Devices</Text>
                     </Text>
                   </View>
 
                   <View style={styles.webStepItem}>
-                    <View style={styles.webStepNumber}>
-                      <Text style={styles.webStepNumberText}>3</Text>
+                    <View style={[styles.webStepNumber, { backgroundColor: colors.backgroundElement }]}>
+                      <Text style={[styles.webStepNumberText, { color: colors.textSecondary }]}>3</Text>
                     </View>
-                    <Text style={styles.webStepText}>
-                      Tap <Text style={styles.webStepHighlight}>Link a Device</Text>
+                    <Text style={[styles.webStepText, { color: colors.textSecondary }]}>
+                      Tap <Text style={[styles.webStepHighlight, { color: colors.text }]}>Link a Device</Text>
                     </Text>
                   </View>
 
                   <View style={styles.webStepItem}>
-                    <View style={styles.webStepNumber}>
-                      <Text style={styles.webStepNumberText}>4</Text>
+                    <View style={[styles.webStepNumber, { backgroundColor: colors.backgroundElement }]}>
+                      <Text style={[styles.webStepNumberText, { color: colors.textSecondary }]}>4</Text>
                     </View>
-                    <Text style={styles.webStepText}>
+                    <Text style={[styles.webStepText, { color: colors.textSecondary }]}>
                       Point your phone to this screen to scan the QR code
                     </Text>
                   </View>
@@ -274,29 +307,29 @@ export default function LoginScreen() {
                   onPress={() => setLoginMode("email")}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.switchBtnText}>Sign in with Email & Password instead</Text>
+                  <Text style={[styles.switchBtnText, { color: colors.accent }]}>Sign in with Email & Password instead</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.webRightCol}>
-                <View style={styles.qrBox}>
+              <View style={[styles.webRightCol, { borderLeftColor: colors.border }]}>
+                <View style={[styles.qrBox, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
                   {qrLoading ? (
-                    <ActivityIndicator size="large" color="#2563EB" />
+                    <ActivityIndicator size="large" color={colors.accent} />
                   ) : qrStatus === "waiting" && sessionToken ? (
                     <Image
                       source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${sessionToken}` }}
                       style={styles.qrImage}
                     />
                   ) : qrStatus === "scanned" ? (
-                    <View style={styles.qrOverlay}>
-                      <Text style={styles.qrSuccessText}>Scanned!</Text>
-                      <Text style={[styles.qrDesc, { marginTop: 4, marginBottom: 8 }]}>Logging you in...</Text>
-                      <ActivityIndicator size="small" color="#16A34A" />
+                    <View style={[styles.qrOverlay, { backgroundColor: colors.cardBg + 'F2' }]}>
+                      <Text style={[styles.qrSuccessText, { color: colors.success }]}>Scanned!</Text>
+                      <Text style={[styles.qrDesc, { color: colors.textSecondary, marginTop: 4, marginBottom: 8 }]}>Logging you in...</Text>
+                      <ActivityIndicator size="small" color={colors.success} />
                     </View>
                   ) : qrStatus === "expired" ? (
-                    <TouchableOpacity style={styles.qrOverlay} onPress={() => setQrTrigger(prev => prev + 1)}>
-                      <Text style={styles.qrExpiredText}>QR Code Expired</Text>
-                      <Text style={styles.qrRefreshText}>Tap to Refresh</Text>
+                    <TouchableOpacity style={[styles.qrOverlay, { backgroundColor: colors.cardBg + 'F2' }]} onPress={() => setQrTrigger(prev => prev + 1)}>
+                      <Text style={[styles.qrExpiredText, { color: colors.error }]}>QR Code Expired</Text>
+                      <Text style={[styles.qrRefreshText, { color: colors.accent }]}>Tap to Refresh</Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -304,16 +337,17 @@ export default function LoginScreen() {
             </View>
           ) : (
             /* Email Login Layout (Mobile default, or Web email mode) */
-            <View style={[styles.card, Platform.OS === 'web' && { maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
+            <View style={[styles.card, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }, Platform.OS === 'web' && { maxWidth: 500, width: '100%', alignSelf: 'center' }]}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email Address</Text>
-                <View style={styles.inputWrapper}>
-                  <Mail size={20} color="#94A3B8" style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Email Address</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.backgroundElement }]}>
+                  <Mail size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="email@example.com"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.textSecondary}
                     autoCapitalize="none"
+                    autoCorrect={false}
                     keyboardType="email-address"
                     value={email}
                     onChangeText={setEmail}
@@ -322,32 +356,34 @@ export default function LoginScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.inputWrapper}>
-                  <Lock size={20} color="#94A3B8" style={styles.inputIcon} />
+                <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: colors.backgroundElement }]}>
+                  <Lock size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="••••••••"
-                    placeholderTextColor="#94A3B8"
+                    placeholderTextColor={colors.textSecondary}
                     secureTextEntry={!showPassword}
                     value={password}
                     onChangeText={setPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword(!showPassword)}
                     style={styles.eyeIcon}
                   >
-                    {showPassword ? <EyeOff size={20} color="#94A3B8" /> : <Eye size={20} color="#94A3B8" />}
+                    {showPassword ? <EyeOff size={20} color={colors.textSecondary} /> : <Eye size={20} color={colors.textSecondary} />}
                   </TouchableOpacity>
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.forgotPass}>
-                <Text style={styles.forgotPassText}>Forgot Password?</Text>
-              </TouchableOpacity>
-
               <TouchableOpacity
-                style={[styles.loginBtn, loading && styles.btnDisabled]}
+                style={[
+                  styles.loginBtn,
+                  { backgroundColor: colors.accent, shadowColor: colors.accent },
+                  loading && { opacity: 0.6 }
+                ]}
                 onPress={login}
                 disabled={loading}
                 activeOpacity={0.8}
@@ -362,7 +398,7 @@ export default function LoginScreen() {
                   onPress={() => setLoginMode("qr")}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.switchBtnText}>Sign in with QR Code instead</Text>
+                  <Text style={[styles.switchBtnText, { color: colors.accent }]}>Sign in with QR Code instead</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -370,9 +406,9 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Don't have an account? </Text>
           <TouchableOpacity onPress={() => router.push("/register")}>
-            <Text style={styles.signUpText}>Create Account</Text>
+            <Text style={[styles.signUpText, { color: colors.accent }]}>Create Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -672,5 +708,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2563EB',
     fontWeight: '700',
+  },
+  selectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 24,
+  },
+  selectorBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  selectorBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  selectorBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  selectorBtnTextActive: {
+    color: '#0F172A',
   },
 });

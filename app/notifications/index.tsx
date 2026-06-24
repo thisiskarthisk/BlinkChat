@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -204,9 +205,13 @@ export default function NotificationsScreen() {
     return (
       <View key={`req-${item.id}`} style={styles.card}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(sender?.full_name || sender?.username || "?")[0].toUpperCase()}
-          </Text>
+          {sender?.avatar_url ? (
+            <Image source={{ uri: sender.avatar_url }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>
+              {(sender?.full_name || sender?.username || "?")[0].toUpperCase()}
+            </Text>
+          )}
         </View>
         <View style={styles.info}>
           <Text style={styles.messageText} numberOfLines={2}>
@@ -273,9 +278,13 @@ export default function NotificationsScreen() {
             }
           }}
         >
-          <View style={[styles.iconContainer, { backgroundColor: (icon.props as any).color + "12" }]}>
-            {icon}
-          </View>
+          {actor?.avatar_url ? (
+            <Image source={{ uri: actor.avatar_url }} style={[styles.avatarImage, { marginRight: 12 }]} />
+          ) : (
+            <View style={[styles.iconContainer, { backgroundColor: (icon.props as any).color + "12" }]}>
+              {icon}
+            </View>
+          )}
           <View style={styles.info}>
             <Text style={styles.messageText} numberOfLines={2}>
               <Text style={styles.bold}>{actor?.full_name || actor?.username}</Text> {message}
@@ -462,6 +471,11 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   iconContainer: {
     width: 44,

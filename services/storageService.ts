@@ -2,6 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { supabase } from "../lib/supabase";
+import { APP_CONFIG } from "../constants/config";
+import * as Notifications from "expo-notifications";
 
 const CHAT_MEDIA_DIR = `${FileSystem.documentDirectory}chat-media/`;
 
@@ -59,10 +61,24 @@ export async function saveCachedMessages(chatId: string, messages: any[]): Promi
   }
 }
 
+async function notifyCleanup() {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "BlinkChat Security Update",
+        body: "Messages and media older than 1 hour have been securely archived to local storage and removed from the server.",
+        sound: true,
+      },
+      trigger: null,
+    });
+  } catch (e) {
+    console.log("Failed to send cleanup notification:", e);
+  }
+}
+
 /**
- * 24-hour cleanup policy:
- * At 1:00 AM, supabase deletes all chats/media from previous days.
- * The app backs them up to local storage first, then executes the delete.
+ * 1-hour interval global clean up policy:
+ * The app backs them up to local storage first, then deletes old chats/media from Supabase.
  */
 export async function syncAndCleanupSupabase(userId: string) {
   try {
@@ -109,52 +125,50 @@ export async function syncAndCleanupSupabase(userId: string) {
       await saveCachedMessages(chatId, merged);
     }
 
-    // 2. Perform 1:00 AM clean up if past 1:00 AM and hasn't run today
+    // 2. Perform 1-hour interval global clean up of messages/media older than 1 hour
     const now = new Date();
-    const todayStr = now.toDateString(); // e.g. "Sat Jun 20 2026"
-    const lastCleanup = await AsyncStorage.getItem(KEY_LAST_SUPABASE_CLEANUP);
+    const nowMs = now.getTime();
+    const lastCleanupStr = await AsyncStorage.getItem(KEY_LAST_SUPABASE_CLEANUP);
+    const lastCleanupTime = lastCleanupStr ? parseInt(lastCleanupStr, 10) : 0;
+    const oneHourMs = 60 * 60 * 1000;
 
-    if (lastCleanup !== todayStr) {
-      // Decide if we are past 1:00 AM
-      const currentHour = now.getHours();
-      
-      if (currentHour >= 1) {
-        // Cutoff is today at 00:00:00. Any message created before today is deleted from Supabase.
-        const cutoffDate = new Date();
-        cutoffDate.setHours(0, 0, 0, 0);
+    if (nowMs - lastCleanupTime >= oneHourMs) {
+      const cutoffDate = new Date(nowMs - oneHourMs);
 
-        for (const chat of myChats) {
-          const chatId = chat.chat_id;
+      // Find all remote messages older than 1 hour across all chats
+      const { data: oldMessages } = await supabase
+        .from("messages")
+        .select("media_path")
+        .lt("created_at", cutoffDate.toISOString());
 
-          // Find remote messages to delete to clean up remote storage files
-          const { data: oldMessages } = await supabase
-            .from("messages")
-            .select("media_path")
-            .eq("chat_id", chatId)
-            .lt("created_at", cutoffDate.toISOString());
-
-          if (oldMessages?.length) {
-            // Delete remote files from Supabase Storage
-            const mediaPaths = oldMessages
-              .map((m) => m.media_path)
-              .filter((p) => !!p) as string[];
-            
-            if (mediaPaths.length > 0) {
-              await supabase.storage.from("chat-media").remove(mediaPaths);
-            }
+      if (oldMessages?.length) {
+        // Delete remote files from Supabase Storage
+        const mediaPaths = oldMessages
+          .map((m) => m.media_path)
+          .filter((p) => !!p) as string[];
+        
+        if (mediaPaths.length > 0) {
+          try {
+            await supabase.storage.from("chat-media").remove(mediaPaths);
+          } catch (storageErr) {
+            console.log("Failed to remove old media files from storage:", storageErr);
           }
-
-          // Delete messages from Supabase Database
-          await supabase
-            .from("messages")
-            .delete()
-            .eq("chat_id", chatId)
-            .lt("created_at", cutoffDate.toISOString());
         }
+      }
 
+      // Delete messages older than 1 hour from Supabase Database
+      const { error: deleteErr } = await supabase
+        .from("messages")
+        .delete()
+        .lt("created_at", cutoffDate.toISOString());
+
+      if (!deleteErr) {
         // Record cleanup success
-        await AsyncStorage.setItem(KEY_LAST_SUPABASE_CLEANUP, todayStr);
-        console.log("Nightly 1:00 AM clean up completed successfully for date:", todayStr);
+        await AsyncStorage.setItem(KEY_LAST_SUPABASE_CLEANUP, nowMs.toString());
+        console.log("Supabase hourly cleanup completed successfully. Deleted messages older than:", cutoffDate.toISOString());
+        await notifyCleanup();
+      } else {
+        console.log("Failed to delete messages from Supabase:", deleteErr.message);
       }
     }
   } catch (err) {
@@ -372,15 +386,31 @@ export async function backupAllData(userId: string): Promise<boolean> {
       });
     }
 
-    // 2. Write backup JSON to file
+    // 2. Fetch all local media files to bundle them in the backup
+    const media: { [key: string]: string } = {};
+    try {
+      await ensureMediaDir();
+      const files = await FileSystem.readDirectoryAsync(CHAT_MEDIA_DIR);
+      for (const file of files) {
+        const fileUri = `${CHAT_MEDIA_DIR}${file}`;
+        const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: "base64" });
+        media[file] = base64;
+      }
+    } catch (err) {
+      console.log("Error reading media files for backup:", err);
+    }
+
+    backupData.media = media;
+
+    // 3. Write backup JSON to file
     const backupFileUri = `${FileSystem.documentDirectory}blinkchat_backup_${Date.now()}.json`;
     await FileSystem.writeAsStringAsync(backupFileUri, JSON.stringify(backupData, null, 2));
 
-    // 3. Share the file via Native sharing
+    // 4. Share the file via Native sharing
     if (await Sharing.isAvailableAsync()) {
       await Sharing.shareAsync(backupFileUri, {
         mimeType: "application/json",
-        dialogTitle: "BlinkChat Chat History Backup",
+        dialogTitle: `${APP_CONFIG.appName} Chat History Backup`,
       });
       return true;
     } else {
@@ -389,6 +419,41 @@ export async function backupAllData(userId: string): Promise<boolean> {
     }
   } catch (e) {
     console.error("backupAllData error:", e);
+    return false;
+  }
+}
+
+// Restore chats and media from a backup JSON file URI
+export async function restoreBackupFromFile(fileUri: string, currentUserId: string): Promise<boolean> {
+  try {
+    const backupJsonString = await FileSystem.readAsStringAsync(fileUri);
+    const backup = JSON.parse(backupJsonString);
+
+    if (!backup || !backup.chats || !Array.isArray(backup.chats)) {
+      throw new Error("Invalid backup file structure.");
+    }
+
+    // 1. Restore chat messages to local cache
+    for (const chat of backup.chats) {
+      const { chatId, messages } = chat;
+      if (chatId && Array.isArray(messages)) {
+        await saveCachedMessages(chatId, messages);
+      }
+    }
+
+    // 2. Restore media files to local media directory
+    if (backup.media && typeof backup.media === "object") {
+      await ensureMediaDir();
+      for (const [fileName, base64Content] of Object.entries(backup.media)) {
+        const fileUri = `${CHAT_MEDIA_DIR}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Content as string, { encoding: "base64" });
+      }
+    }
+
+    console.log("Backup restored successfully.");
+    return true;
+  } catch (e) {
+    console.error("restoreBackupFromFile error:", e);
     return false;
   }
 }

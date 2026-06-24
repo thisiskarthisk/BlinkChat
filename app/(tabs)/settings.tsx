@@ -19,6 +19,7 @@ import { router, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as DocumentPicker from "expo-document-picker";
 import {
   User,
   Settings,
@@ -44,6 +45,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/use-theme";
 import { Themes, ThemeName } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
+import { APP_CONFIG } from "@/constants/config";
 import { createClient } from "@supabase/supabase-js";
 import {
   checkAutoDeletePolicy,
@@ -51,10 +53,12 @@ import {
   backupAllData,
   performFullDataWipe,
   AutoDeleteInfo,
+  restoreBackupFromFile,
 } from "@/services/storageService";
 import { ensureCompanyChats } from "@/services/chatService";
 
 const { width } = Dimensions.get("window");
+let isScanningGlobal = false;
 
 export default function SettingsScreen() {
   const { user, profile, signOut, updateProfile } = useAuth();
@@ -73,15 +77,7 @@ export default function SettingsScreen() {
   const [showPinSetupModal, setShowPinSetupModal] = useState(false);
   const [newPin, setNewPin] = useState("");
 
-  // Profile Edit modal
-  const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [editFullName, setEditFullName] = useState("");
-  const [editUsername, setEditUsername] = useState("");
-  const [editStatus, setEditStatus] = useState("");
-  const [editAvatarUrl, setEditAvatarUrl] = useState("");
 
-  // Avatar Lightbox/Modal preview
-  const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
 
   // Company management state
   const [showCompanySetup, setShowCompanySetup] = useState(false);
@@ -107,6 +103,14 @@ export default function SettingsScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [showScanner, setShowScanner] = useState(false);
   const scannerScannedRef = useRef(false);
+
+  // Auto-reset scanning locks when scanner is closed
+  useEffect(() => {
+    if (!showScanner) {
+      scannerScannedRef.current = false;
+      isScanningGlobal = false;
+    }
+  }, [showScanner]);
 
   // Linked Devices states
   const [linkedDevices, setLinkedDevices] = useState<any[]>([]);
@@ -167,13 +171,15 @@ export default function SettingsScreen() {
   };
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
-    if (scannerScannedRef.current) return;
+    if (scannerScannedRef.current || isScanningGlobal) return;
     scannerScannedRef.current = true;
+    isScanningGlobal = true;
 
     const token = data.trim();
     if (!token) {
       Alert.alert("Error", "Invalid QR code scanned.");
       scannerScannedRef.current = false;
+      isScanningGlobal = false;
       return;
     }
 
@@ -188,6 +194,7 @@ export default function SettingsScreen() {
           console.warn("Mobile session refresh failed on scan:", refreshErr.message);
           Alert.alert("Link Failed", "Your phone session could not be refreshed. Please log out of the mobile app and log back in, then try again.");
           scannerScannedRef.current = false;
+          isScanningGlobal = false;
           setLoading(false);
           return;
         } else {
@@ -201,6 +208,7 @@ export default function SettingsScreen() {
       if (!session) {
         Alert.alert("Error", "No active session found.");
         scannerScannedRef.current = false;
+        isScanningGlobal = false;
         return;
       }
 
@@ -221,10 +229,12 @@ export default function SettingsScreen() {
         console.error("Error updating device_links:", error);
         Alert.alert("Update Error", error.message);
         scannerScannedRef.current = false;
+        isScanningGlobal = false;
       } else if (!updated || updated.length === 0) {
         console.warn("No rows updated in device_links. Token might be invalid or expired.");
         Alert.alert("Link Failed", "This QR code is invalid or has expired. Please refresh the page on your web browser and scan again.");
         scannerScannedRef.current = false;
+        isScanningGlobal = false;
       } else {
         console.log("device_links updated successfully, rows updated:", updated.length);
         Alert.alert("Success", "Device linked successfully!");
@@ -235,6 +245,7 @@ export default function SettingsScreen() {
       console.error("Link exception:", e);
       Alert.alert("Error", e.message || "Could not link device.");
       scannerScannedRef.current = false;
+      isScanningGlobal = false;
     } finally {
       setLoading(false);
     }
@@ -253,7 +264,9 @@ export default function SettingsScreen() {
         return;
       }
     }
+    
     scannerScannedRef.current = false;
+    isScanningGlobal = false;
     setShowScanner(true);
   };
 
@@ -276,10 +289,6 @@ export default function SettingsScreen() {
 
       // 3. Setup edit fields from profile
       if (profile) {
-        setEditFullName(profile.full_name || "");
-        setEditUsername(profile.username || "");
-        setEditStatus(profile.status || "Hey there!");
-        setEditAvatarUrl(profile.avatar_url || "");
         setCompanyNameInput(profile.company_name || "");
         setIsCompanyAdminInput(profile.is_company_admin);
       }
@@ -334,41 +343,7 @@ export default function SettingsScreen() {
     }
   };
 
-  // Profile Edit save
-  const handleSaveProfile = async () => {
-    if (!user?.id || !editFullName.trim() || !editUsername.trim()) {
-      Alert.alert("Error", "Name and Username are required.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          full_name: editFullName,
-          username: editUsername,
-          status: editStatus,
-          avatar_url: editAvatarUrl || null,
-        })
-        .eq("id", user.id);
 
-      if (error) throw error;
-
-      updateProfile({
-        full_name: editFullName,
-        username: editUsername,
-        status: editStatus,
-        avatar_url: editAvatarUrl || null,
-      });
-
-      setShowProfileEdit(false);
-      Alert.alert("Success", "Profile updated successfully.");
-    } catch (err: any) {
-      Alert.alert("Error", err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Enable/Disable auto-delete retention policy
   const handleToggleAutoDelete = async (value: boolean) => {
@@ -394,6 +369,35 @@ export default function SettingsScreen() {
       Alert.alert("Success", "Backup generated and ready to save.");
     } else {
       Alert.alert("Error", "Failed to generate backup.");
+    }
+  };
+
+  // Import backup data from JSON file
+  const handleImport = async () => {
+    if (!user?.id) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/json",
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      setLoading(true);
+      const selectedFile = result.assets[0];
+      const success = await restoreBackupFromFile(selectedFile.uri, user.id);
+      setLoading(false);
+
+      if (success) {
+        Alert.alert("Success", "All chats and media files have been successfully imported!");
+      } else {
+        Alert.alert("Error", "Failed to restore chat data. Make sure it's a valid backup file.");
+      }
+    } catch (e: any) {
+      setLoading(false);
+      Alert.alert("Error", e.message || "Failed to import backup.");
     }
   };
 
@@ -653,7 +657,7 @@ export default function SettingsScreen() {
           username: usernameClean,
           phone: null,
           email: newEmployeeEmail.trim().toLowerCase(),
-          status: "Hey there! I am using BlinkChat",
+          status: `Hey there! I am using ${APP_CONFIG.appName}`,
           is_online: false,
           company_id: profile.company_id,
           is_company_admin: false,
@@ -733,16 +737,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const getInitials = (name: string) => {
-    if (!name) return "?";
-    const parts = name.trim().split(" ");
-    return parts.length >= 2
-      ? `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-      : parts[0][0].toUpperCase();
-  };
 
-  const currentProfileName = profile?.full_name || profile?.username || "User";
-  const userInitials = getInitials(currentProfileName);
 
   // Search filtered users in add modal
   const filteredUsers = allUsers.filter((u) => {
@@ -758,32 +753,13 @@ export default function SettingsScreen() {
         
 
 
-        {/* Profile Card Section */}
-        <View style={[styles.profileSection, { backgroundColor: colors.surface }]}>
-          <TouchableOpacity onPress={() => setShowAvatarLightbox(true)} style={styles.avatarWrapper}>
-            {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
-            ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: colors.accent }]}>
-                <Text style={styles.avatarInitials}>{userInitials}</Text>
-              </View>
-            )}
-            <View style={[styles.editBadge, { backgroundColor: colors.accent }]}>
-              <Camera size={14} color="#FFF" />
-            </View>
-          </TouchableOpacity>
-
-          <View style={styles.profileDetails}>
-            <Text style={[styles.profileName, { color: colors.text }]}>{currentProfileName}</Text>
-            <Text style={[styles.profileUsername, { color: colors.textSecondary }]}>@{profile?.username || "username"}</Text>
-            <Text style={[styles.profileStatus, { color: colors.textSecondary }]} numberOfLines={1}>
-              {profile?.status || "Hey there! I am using BlinkChat"}
-            </Text>
-          </View>
-
-          <TouchableOpacity style={[styles.editProfileBtn, { backgroundColor: colors.backgroundSelected }]} onPress={() => setShowProfileEdit(true)}>
-            <Text style={[styles.editProfileText, { color: colors.text }]}>Edit Profile</Text>
-          </TouchableOpacity>
+        {/* Settings Header */}
+        <View style={{ paddingHorizontal: 4, paddingVertical: 16, alignItems: "center" }}>
+          <Settings size={40} color={colors.accent} style={{ marginBottom: 8 }} />
+          <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text }}>Settings & Tools</Text>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4, textAlign: "center" }}>
+            Manage your preferences, security PIN, and database backup
+          </Text>
         </View>
 
         {/* Dynamic Themes Changer Section */}
@@ -885,6 +861,19 @@ export default function SettingsScreen() {
               <Text style={[styles.actionItemLabel, { color: colors.text }]}>Backup All Chats & Media</Text>
               <Text style={[styles.actionItemSub, { color: colors.textSecondary }]}>
                 Export your chats history to local document folder
+              </Text>
+            </View>
+            <ChevronRight size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionItem} onPress={handleImport}>
+            <View style={[styles.actionIconBg, { backgroundColor: colors.backgroundSelected }]}>
+              <Plus size={18} color={colors.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.actionItemLabel, { color: colors.text }]}>Import Chats & Media Backup</Text>
+              <Text style={[styles.actionItemSub, { color: colors.textSecondary }]}>
+                Restore your chats and media files from a backup file
               </Text>
             </View>
             <ChevronRight size={18} color={colors.textSecondary} />
@@ -1009,93 +998,11 @@ export default function SettingsScreen() {
         {/* Log Out button */}
         <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.error + "15", borderColor: colors.error }]} onPress={signOut}>
           <LogOut size={20} color={colors.error} style={{ marginRight: 8 }} />
-          <Text style={[styles.logoutBtnText, { color: colors.error }]}>Log Out of BlinkChat</Text>
+          <Text style={[styles.logoutBtnText, { color: colors.error }]}>Log Out of {APP_CONFIG.appName}</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Lightbox / Modal Avatar Preview */}
-      <Modal visible={showAvatarLightbox} transparent animationType="fade" onRequestClose={() => setShowAvatarLightbox(false)}>
-        <View style={styles.lightboxOverlay}>
-          <TouchableOpacity style={styles.lightboxClose} onPress={() => setShowAvatarLightbox(false)}>
-            <X size={26} color="#FFF" />
-          </TouchableOpacity>
-          {profile?.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.lightboxImage} resizeMode="contain" />
-          ) : (
-            <View style={[styles.lightboxAvatarPlaceholder, { backgroundColor: colors.accent }]}>
-              <Text style={styles.lightboxInitials}>{userInitials}</Text>
-            </View>
-          )}
-        </View>
-      </Modal>
 
-      {/* Profile Edit Modal */}
-      <Modal visible={showProfileEdit} transparent animationType="slide" onRequestClose={() => setShowProfileEdit(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile Details</Text>
-              <TouchableOpacity onPress={() => setShowProfileEdit(false)}>
-                <X size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Full Name</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                  value={editFullName}
-                  onChangeText={setEditFullName}
-                  placeholder="Enter full name..."
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Username</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                  value={editUsername}
-                  onChangeText={setEditUsername}
-                  placeholder="Enter username..."
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Status / Biography</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                  value={editStatus}
-                  onChangeText={setEditStatus}
-                  placeholder="Enter status..."
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <Text style={[styles.inputLabel, { color: colors.text }]}>Avatar URL (Image Source)</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-                  value={editAvatarUrl}
-                  onChangeText={setEditAvatarUrl}
-                  placeholder="https://example.com/avatar.jpg"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.modalSaveBtn, { backgroundColor: colors.accent }, loading && { opacity: 0.6 }]}
-                onPress={handleSaveProfile}
-                disabled={loading}
-              >
-                {loading ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.modalSaveText}>Save Settings</Text>}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
 
       {/* Global PIN Configuration Modal */}
       <Modal visible={showPinSetupModal} transparent animationType="fade" onRequestClose={() => setShowPinSetupModal(false)}>
@@ -1369,7 +1276,7 @@ export default function SettingsScreen() {
 
                 <View style={styles.devicesBanner}>
                   <Text style={styles.devicesBannerEmoji}>💻</Text>
-                  <Text style={[styles.devicesBannerText, { color: colors.text }]}>Use BlinkChat on other devices</Text>
+                  <Text style={[styles.devicesBannerText, { color: colors.text }]}>Use {APP_CONFIG.appName} on other devices</Text>
                   <Text style={[styles.devicesBannerSub, { color: colors.textSecondary }]}>
                     Link up to 4 web sessions simultaneously to keep chatting on desktop.
                   </Text>

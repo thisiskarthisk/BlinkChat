@@ -239,6 +239,7 @@ import {
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { MessageCircleMore } from 'lucide-react-native';
+import { APP_CONFIG } from '../constants/config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -444,7 +445,7 @@ export default function AnimatedSplashOverlay({
           },
         ]}
       >
-        <Text style={styles.brand}>BlinkChat</Text>
+        <Text style={styles.brand}>{APP_CONFIG.appName}</Text>
 
         <Text style={styles.tagline}>
           Fast • Secure • Instant Messaging
