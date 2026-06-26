@@ -17,7 +17,7 @@ import { createClient } from "@supabase/supabase-js";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, router } from "expo-router";
 import {
   Building,
   Check,
@@ -27,6 +27,7 @@ import {
   Lock,
   LogOut,
   Palette,
+  ArrowLeft,
   Plus,
   QrCode,
   Settings,
@@ -35,6 +36,7 @@ import {
   X
 } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -57,6 +59,7 @@ let isScanningGlobal = false;
 export default function SettingsScreen() {
   const { user, profile, signOut, updateProfile } = useAuth();
   const { themeName, setTheme, colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   // Settings state
   const [loading, setLoading] = useState(false);
@@ -748,6 +751,23 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Top Header Bar with Back Button */}
+      <View style={{
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 16,
+        paddingTop: Platform.OS === 'web' ? 14 : 14 + insets.top,
+        paddingBottom: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.surface,
+      }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
+          <ArrowLeft size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={{ fontSize: 18, fontWeight: "bold", color: colors.text }}>Settings</Text>
+      </View>
+
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
 
@@ -1432,7 +1452,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 16,
-    paddingTop: 64,
+    paddingTop: 16,
     paddingBottom: 40,
   },
   warningBanner: {

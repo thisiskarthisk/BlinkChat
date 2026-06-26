@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as LocalAuthentication from "expo-local-authentication";
 import { router, useFocusEffect } from "expo-router";
-import { AlertTriangle, Bell, ChevronRight, Lock, LogOut, Search, SquarePen, X } from "lucide-react-native";
+import { AlertTriangle, Bell, Check, ChevronRight, Lock, LogOut, Plus, Search, SquarePen, X } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -134,7 +134,7 @@ function getMessagePreview(lastMessage: any) {
 }
 
 export default function HomeScreen() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut, savedAccounts, addAccount, switchAccount } = useAuth();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -170,10 +170,54 @@ export default function HomeScreen() {
   const [showFriendsModal, setShowFriendsModal] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [friendsSearch, setFriendsSearch] = useState("");
+  const [searchTab, setSearchTab] = useState<"chats" | "messages">("chats");
+  const [searchedMessages, setSearchedMessages] = useState<any[]>([]);
+  const [isSearchingMessages, setIsSearchingMessages] = useState(false);
   const [requestsTab, setRequestsTab] = useState<"received" | "sent">("received");
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [loadingRequests, setLoadingRequests] = useState(false);
   const [actioningRequestId, setActioningRequestId] = useState<number | null>(null);
+
+  // Account Switcher
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [switchingUserId, setSwitchingUserId] = useState<string | null>(null);
+
+  const handleSwitchAccount = async (userId: string) => {
+    if (user?.id === userId) { setShowAccountModal(false); return; }
+    try {
+      setSwitchingUserId(userId);
+      await switchAccount(userId);
+      setShowAccountModal(false);
+    } catch (err: any) {
+      const msg = err?.message || "Session expired. Please log in again.";
+      if (Platform.OS === "web") {
+        window.alert(`Could not switch account: ${msg}`);
+      } else {
+        Alert.alert("Switch Failed", msg);
+      }
+    } finally {
+      setSwitchingUserId(null);
+    }
+  };
+
+  const handleAddAccount = async () => {
+    setShowAccountModal(false);
+    if (Platform.OS === "web") {
+      const ok = window.confirm("Log in to another account? Your current session will be saved.");
+      if (ok) { setTimeout(() => addAccount(), 300); }
+    } else {
+      setTimeout(() => {
+        Alert.alert(
+          "Add Account",
+          "Log in to another account? Your current session will be saved.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Log In", onPress: () => addAccount() },
+          ]
+        );
+      }, 300);
+    }
+  };
 
   const loadChats = useCallback(async () => {
     if (!user?.id) return;
@@ -374,8 +418,77 @@ export default function HomeScreen() {
     );
   }
 
+  const searchMessages = async (query: string) => {
+    if (!query.trim() || !user?.id || chats.length === 0) {
+      setSearchedMessages([]);
+      return;
+    }
+    setIsSearchingMessages(true);
+    try {
+      const localMatches: any[] = [];
+      for (const chat of chats) {
+        const cached = await getCachedMessages(chat.chat_id);
+        const matches = cached.filter((m: any) => 
+          m.message_type === "text" && 
+          m.message?.toLowerCase().includes(query.toLowerCase())
+        );
+        if (matches.length > 0) {
+          localMatches.push({
+            chat_id: chat.chat_id,
+            profile: chat.profile,
+            messages: matches
+          });
+        }
+      }
+      setSearchedMessages(localMatches);
+
+      const chatIds = chats.map(c => c.chat_id);
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .in("chat_id", chatIds)
+        .eq("message_type", "text")
+        .ilike("message", `%${query}%`)
+        .order("created_at", { ascending: false });
+
+      if (!error && data) {
+        const grouped: { [key: string]: any[] } = {};
+        data.forEach(m => {
+          if (!grouped[m.chat_id]) grouped[m.chat_id] = [];
+          grouped[m.chat_id].push(m);
+        });
+
+        const remoteMatches: any[] = [];
+        chats.forEach(chat => {
+          const msgs = grouped[chat.chat_id] || [];
+          if (msgs.length > 0) {
+            remoteMatches.push({
+              chat_id: chat.chat_id,
+              profile: chat.profile,
+              messages: msgs
+            });
+          }
+        });
+        
+        if (remoteMatches.length > 0) {
+          setSearchedMessages(remoteMatches);
+        }
+      }
+    } catch (e) {
+      console.log("Error searching messages:", e);
+    } finally {
+      setIsSearchingMessages(false);
+    }
+  };
+
   useEffect(() => {
     applySearch(chats, search);
+    
+    const delayDebounce = setTimeout(() => {
+      searchMessages(search);
+    }, 300);
+    
+    return () => clearTimeout(delayDebounce);
   }, [search, chats]);
 
   // Retention warning banner ticker
@@ -573,6 +686,28 @@ export default function HomeScreen() {
           ? 16
           : (insets.top > 0 ? insets.top + 12 : 16) 
        }]}>
+        {/* Left: Account Switcher Avatar */}
+        <TouchableOpacity
+          style={styles.headerAvatarBtn}
+          onPress={() => setShowAccountModal(true)}
+          activeOpacity={0.75}
+        >
+          {profile?.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.headerAvatar} />
+          ) : (
+            <View style={[styles.headerAvatarFallback, { backgroundColor: colors.accent }]}>
+              <Text style={styles.headerAvatarInitial}>
+                {(profile?.full_name || profile?.username || user?.email || "U")[0].toUpperCase()}
+              </Text>
+            </View>
+          )}
+          {savedAccounts.length > 1 && (
+            <View style={styles.headerAccountBadge}>
+              <Text style={styles.headerAccountBadgeText}>{savedAccounts.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
         <TouchableOpacity onPress={() => setShowLockedSection(!showLockedSection)}>
           <Text style={styles.headerTitle}>{APP_CONFIG.appName}</Text>
           <Text style={styles.headerSub}>
@@ -656,42 +791,131 @@ export default function HomeScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Chat List */}
-      {chats.length === 0 && loading ? (
-        <View style={styles.emptyState}>
-          <ActivityIndicator size="large" color="#2563EB" />
+      {/* Search Toggle Tab */}
+      {search.length > 0 && (
+        <View style={{ flexDirection: "row", marginHorizontal: 16, marginBottom: 12, borderRadius: 8, overflow: "hidden", borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}>
+          <TouchableOpacity 
+            style={{ flex: 1, paddingVertical: 8, alignItems: "center", backgroundColor: searchTab === "chats" ? colors.accent : "transparent" }}
+            onPress={() => setSearchTab("chats")}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "600", color: searchTab === "chats" ? "#FFF" : colors.text }}>Chats</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={{ flex: 1, paddingVertical: 8, alignItems: "center", backgroundColor: searchTab === "messages" ? colors.accent : "transparent" }}
+            onPress={() => setSearchTab("messages")}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "600", color: searchTab === "messages" ? "#FFF" : colors.text }}>Messages</Text>
+          </TouchableOpacity>
         </View>
-      ) : filteredChats.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>{search ? "🔍" : "💬"}</Text>
-          <Text style={styles.emptyTitle}>
-            {search ? "No results found" : "No chats yet"}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {search
-              ? `No chats matching "${search}"`
-              : "Tap the pencil icon to start a new conversation"}
-          </Text>
-          {!search && (
-            <TouchableOpacity
-              style={styles.startChatBtn}
-              onPress={() => router.push("/users/search")}
-            >
-              <Text style={styles.startChatText}>Start a Chat</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+      )}
+
+      {/* Chat List or Search Results */}
+      {search.length > 0 && searchTab === "messages" ? (
+        isSearchingMessages && searchedMessages.length === 0 ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="small" color={colors.accent} />
+          </View>
+        ) : searchedMessages.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🔍</Text>
+            <Text style={styles.emptyTitle}>No matching messages</Text>
+            <Text style={styles.emptySubtitle}>No messages match your search term "{search}"</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={searchedMessages}
+            keyExtractor={(item) => item.chat_id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+            renderItem={({ item }) => (
+              <View style={{ marginBottom: 16 }}>
+                {/* Section Header: User Name / Chat */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8, paddingVertical: 4 }}>
+                  {item.profile?.avatar_url ? (
+                    <Image source={{ uri: item.profile.avatar_url }} style={{ width: 28, height: 28, borderRadius: 14, marginRight: 8 }} />
+                  ) : (
+                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center", marginRight: 8 }}>
+                      <Text style={{ color: "#FFF", fontSize: 11, fontWeight: "bold" }}>
+                        {(item.profile?.full_name || item.profile?.username || "?")[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text }}>
+                    {item.profile?.full_name || item.profile?.username || "Chat"}
+                  </Text>
+                </View>
+                
+                {/* Matching Messages */}
+                {item.messages.map((msg: any) => {
+                  const isMine = msg.sender_id === user?.id;
+                  return (
+                    <TouchableOpacity
+                      key={msg.id}
+                      onPress={() => router.push({ pathname: "/chat/[id]", params: { id: item.chat_id } })}
+                      style={{
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 8,
+                        marginLeft: 12,
+                        alignSelf: "stretch"
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: isMine ? colors.accent : "#128C7E" }}>
+                          {isMine ? "You" : (item.profile?.full_name || item.profile?.username || "User")}
+                        </Text>
+                        <Text style={{ fontSize: 9, color: colors.textSecondary }}>
+                          {formatTime(msg.created_at)}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 13, color: colors.text }}>{msg.message}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          />
+        )
       ) : (
-        <FlatList
-          data={filteredChats}
-          keyExtractor={(item) => item.chat_id}
-          renderItem={renderChat}
-          refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={onRefresh} />
-          }
-          contentContainerStyle={{ paddingVertical: 8 }}
-          showsVerticalScrollIndicator={false}
-        />
+        chats.length === 0 && loading ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator size="large" color="#2563EB" />
+          </View>
+        ) : filteredChats.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>{search ? "🔍" : "💬"}</Text>
+            <Text style={styles.emptyTitle}>
+              {search ? "No results found" : "No chats yet"}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {search
+                ? `No chats matching "${search}"`
+                : "Tap the pencil icon to start a new conversation"}
+            </Text>
+            {!search && (
+              <TouchableOpacity
+                style={styles.startChatBtn}
+                onPress={() => router.push("/users/search")}
+              >
+                <Text style={styles.startChatText}>Start a Chat</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <FlatList
+            data={filteredChats}
+            keyExtractor={(item) => item.chat_id}
+            renderItem={renderChat}
+            refreshControl={
+              <RefreshControl refreshing={loading} onRefresh={onRefresh} />
+            }
+            contentContainerStyle={{ paddingVertical: 8 }}
+            showsVerticalScrollIndicator={false}
+          />
+        )
       )}
 
       {/* PIN Verification Modal */}
@@ -1020,6 +1244,110 @@ export default function HomeScreen() {
             />
           )}
         </View>
+      </Modal>
+
+      {/* ── Account Switcher Modal (WhatsApp-style) ── */}
+      <Modal
+        visible={showAccountModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountModal(false)}
+      >
+        <TouchableOpacity
+          style={accStyles.overlay}
+          activeOpacity={1}
+          onPress={() => setShowAccountModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+            style={[accStyles.sheet, { backgroundColor: colors.surface }]}
+          >
+            {/* Handle bar */}
+            <View style={[accStyles.handle, { backgroundColor: colors.border }]} />
+
+            {/* Title */}
+            <View style={[accStyles.sheetHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[accStyles.sheetTitle, { color: colors.text }]}>Accounts</Text>
+              <TouchableOpacity onPress={() => setShowAccountModal(false)} style={accStyles.closeBtn}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Account Rows */}
+            {savedAccounts.map((acc) => {
+              const isActive = user?.id === acc.userId;
+              const isSwitching = switchingUserId === acc.userId;
+              return (
+                <TouchableOpacity
+                  key={acc.userId}
+                  style={[
+                    accStyles.accountRow,
+                    { borderBottomColor: colors.border },
+                    isActive && { backgroundColor: colors.accent + "10" },
+                  ]}
+                  onPress={() => handleSwitchAccount(acc.userId)}
+                  disabled={isSwitching || switchingUserId !== null}
+                  activeOpacity={0.75}
+                >
+                  {/* Avatar */}
+                  <View style={accStyles.avatarContainer}>
+                    {acc.profile?.avatar_url ? (
+                      <Image source={{ uri: acc.profile.avatar_url }} style={accStyles.avatar} />
+                    ) : (
+                      <View style={[accStyles.avatarFallback, { backgroundColor: colors.accent }]}>
+                        <Text style={accStyles.avatarInitial}>
+                          {(acc.profile?.full_name || acc.profile?.username || "?")[0].toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    {isActive && (
+                      <View style={[accStyles.activeIndicator, { backgroundColor: "#22C55E", borderColor: colors.surface }]} />
+                    )}
+                  </View>
+
+                  {/* Name + Email */}
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={[accStyles.accountName, { color: colors.text, fontWeight: isActive ? "700" : "500" }]} numberOfLines={1}>
+                        {acc.profile?.full_name || acc.profile?.username || "User"}
+                      </Text>
+                      {isActive && (
+                        <View style={[accStyles.activePill, { backgroundColor: colors.accent }]}>
+                          <Text style={accStyles.activePillText}>Active</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[accStyles.accountEmail, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {acc.email}
+                    </Text>
+                  </View>
+
+                  {/* Right icon */}
+                  {isSwitching ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : isActive ? (
+                    <Check size={20} color={colors.accent} />
+                  ) : (
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* Add Account */}
+            <TouchableOpacity
+              style={[accStyles.accountRow, accStyles.addRow, { borderBottomColor: colors.border }]}
+              onPress={handleAddAccount}
+              activeOpacity={0.75}
+            >
+              <View style={[accStyles.addIconCircle, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+                <Plus size={20} color={colors.accent} />
+              </View>
+              <Text style={[accStyles.addText, { color: colors.accent, marginLeft: 14 }]}>Add Account</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1577,5 +1905,161 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontWeight: "600",
     fontSize: 12,
+  },
+
+  // Header avatar (account switcher trigger)
+  headerAvatarBtn: {
+    position: "relative",
+    marginRight: 10,
+  },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  headerAvatarFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerAvatarInitial: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  headerAccountBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -4,
+    backgroundColor: "#2563EB",
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFF",
+  },
+  headerAccountBadgeText: {
+    color: "#FFF",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+});
+
+// ── Account Switcher Sheet Styles ──────────────────────────────────────────────
+const accStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 32,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  addRow: {
+    marginTop: 8,
+    borderBottomWidth: 0,
+  },
+  avatarContainer: {
+    position: "relative",
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  avatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarInitial: {
+    color: "#FFF",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  activeIndicator: {
+    position: "absolute",
+    bottom: 1,
+    right: 1,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 2,
+  },
+  accountName: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  accountEmail: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  activePill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  activePillText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  addIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

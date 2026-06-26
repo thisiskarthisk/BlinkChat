@@ -11584,6 +11584,7 @@ export default function ChatScreen() {
   const hasInitialScrolled = useRef(false);
   const lastMessagesLengthRef = useRef(0);
   const broadcastChRef = useRef<any>(null);
+  const inputRef = useRef<TextInput>(null);
 
   // Animated bottom padding for the input bar. Starts at the safe-area
   // inset (keyboard closed) and animates to a tight 10px the instant the
@@ -12510,6 +12511,11 @@ export default function ChatScreen() {
   };
 
   const handleSendPress = async () => {
+    // Refocus the input immediately on web to prevent the virtual keyboard
+    // from dismissing after each message send (PWA / Add-to-Home-Screen).
+    if (Platform.OS === 'web') {
+      inputRef.current?.focus();
+    }
     if (pendingMedia) {
       const media = pendingMedia;
       setPendingMedia(null);
@@ -12518,6 +12524,10 @@ export default function ChatScreen() {
       await sendMedia(media.uri, media.mimeType, media.type, media.fileName, undefined, captionText);
     } else {
       await sendText();
+    }
+    // Re-focus after the async work completes so keyboard stays open.
+    if (Platform.OS === 'web') {
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
   };
 
@@ -13066,6 +13076,7 @@ export default function ChatScreen() {
                 ) : (
                   <View style={styles.inputPill}>
                     <TextInput
+                      ref={inputRef}
                       style={styles.input}
                       placeholder={pendingMedia ? "Add a caption..." : "Type a message..."}
                       placeholderTextColor="#9CA3AF"

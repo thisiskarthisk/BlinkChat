@@ -17,10 +17,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import {
   Camera,
+  ChevronDown,
   ChevronRight,
   Key,
   LogOut,
   Pencil,
+  Plus,
   Settings as SettingsIcon,
   UserCheck,
   Users,
@@ -57,27 +59,9 @@ function useKeyboardModalOffset() {
 
   useEffect(() => {
     if (Platform.OS === "web") {
-      if (typeof window === "undefined" || !window.visualViewport) return;
-
-      const handleViewport = () => {
-        const vp = window.visualViewport;
-        if (!vp) return;
-        const diff = window.innerHeight - vp.height;
-        const kbHeight = diff > 100 ? diff : 0;
-        
-        Animated.timing(offset, {
-          toValue: -kbHeight,
-          duration: 150,
-          useNativeDriver: true,
-        }).start();
-      };
-
-      window.visualViewport.addEventListener("resize", handleViewport);
-      handleViewport();
-
-      return () => {
-        window.visualViewport?.removeEventListener("resize", handleViewport);
-      };
+      // On Web, the shrunken visual viewport automatically keeps the centered modal visible.
+      // Doing manual translation would push it off the top of the screen.
+      return;
     }
 
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -114,9 +98,33 @@ export default function ProfileScreen() {
 
   // Keyboard offset for profile edit & password modals
   const kbOffset = useKeyboardModalOffset();
-  const { user, profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, signOut, savedAccounts, addAccount, switchAccount } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const [showAccountSwitchModal, setShowAccountSwitchModal] = useState(false);
+
+  const handleAddAccountClick = async () => {
+    if (Platform.OS === 'web') {
+      const ok = window.confirm("Do you want to log in to another account? Your current session will be saved.");
+      if (ok) {
+        await addAccount();
+      }
+    } else {
+      Alert.alert(
+        "Add Account",
+        "Do you want to log in to another account? Your current session will be saved.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Log In", 
+            onPress: async () => {
+              await addAccount();
+            } 
+          }
+        ]
+      );
+    }
+  };
 
   // Active sub-tab (Chats list or Media grid)
   const [activeTab, setActiveTab] = useState<"chats" | "media">("chats");
@@ -594,9 +602,21 @@ export default function ProfileScreen() {
       }]}>
         <View style={styles.headerLeft}>
           <Text style={[styles.headerGreeting, { color: colors.textSecondary }]}>Account Dashboard</Text>
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            @{profile?.username || "username"}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={[styles.headerTitle, { color: colors.text, marginRight: 6 }]} numberOfLines={1}>
+              @{profile?.username || "username"}
+            </Text>
+            
+            {savedAccounts.length > 1 ? (
+              <TouchableOpacity onPress={() => setShowAccountSwitchModal(true)} style={{ padding: 4 }}>
+                <ChevronDown size={18} color={colors.text} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={() => setShowAccountSwitchModal(true)} style={{ padding: 4 }}>
+                <ChevronDown size={18} color={colors.text} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <TouchableOpacity
           onPress={() => router.push("/(tabs)/settings")}
@@ -1206,6 +1226,103 @@ export default function ProfileScreen() {
             <Image source={{ uri: selectedMediaUri }} style={styles.lightboxImage} resizeMode="contain" />
           )}
         </View>
+      </Modal>
+
+      {/* BOTTOM MODAL: Account Switcher */}
+      <Modal
+        visible={showAccountSwitchModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountSwitchModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowAccountSwitchModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+            style={[styles.bottomSheetContent, { backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }]}
+          >
+            <View style={styles.bottomSheetHeader}>
+              <Text style={[styles.bottomSheetTitle, { color: colors.text }]}>Accounts</Text>
+              <TouchableOpacity onPress={() => setShowAccountSwitchModal(false)}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              {savedAccounts.map((acc) => {
+                const isActive = user?.id === acc.userId;
+                return (
+                  <TouchableOpacity
+                    key={acc.userId}
+                    style={[
+                      styles.accountRow,
+                      { borderBottomColor: colors.border, borderBottomWidth: 0.5 }
+                    ]}
+                    onPress={async () => {
+                      if (isActive) return;
+                      setShowAccountSwitchModal(false);
+                      try {
+                        await switchAccount(acc.userId);
+                      } catch (err: any) {
+                        const msg = err?.message || "Session expired. Please log in again.";
+                        if (Platform.OS === "web") {
+                          window.alert(`Could not switch account: ${msg}`);
+                        } else {
+                          Alert.alert("Switch Failed", msg);
+                        }
+                      }
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      {acc.profile?.avatar_url ? (
+                        <Image source={{ uri: acc.profile.avatar_url }} style={styles.accountAvatar} />
+                      ) : (
+                        <View style={[styles.accountAvatarPlaceholder, { backgroundColor: colors.accent }]}>
+                          <Text style={styles.accountAvatarText}>
+                            {(acc.profile?.full_name || acc.profile?.username || "?")[0].toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ marginLeft: 12 }}>
+                        <Text style={[styles.accountName, { color: colors.text, fontWeight: isActive ? "700" : "500" }]}>
+                          {acc.profile?.full_name || acc.profile?.username || "User"}
+                        </Text>
+                        <Text style={[styles.accountEmail, { color: colors.textSecondary }]}>
+                          {acc.email}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.radioButton, { borderColor: colors.accent }]}>
+                      {isActive && <View style={[styles.radioButtonInner, { backgroundColor: colors.accent }]} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <TouchableOpacity
+                style={[styles.accountRow, { marginTop: 12 }]}
+                onPress={async () => {
+                  setShowAccountSwitchModal(false);
+                  setTimeout(handleAddAccountClick, 300);
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                  <View style={[styles.accountAvatarPlaceholder, { backgroundColor: colors.border }]}>
+                    <Plus size={20} color={colors.text} />
+                  </View>
+                  <Text style={[styles.accountName, { color: colors.text, marginLeft: 12, fontWeight: "600" }]}>
+                    Add Account
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </ScrollView>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -1927,5 +2044,65 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
     lineHeight: 18,
+  },
+  bottomSheetContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: "60%",
+  },
+  bottomSheetHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  bottomSheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+  },
+  accountAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  accountAvatarPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  accountAvatarText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  accountName: {
+    fontSize: 15,
+  },
+  accountEmail: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  radioButton: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 4,
+  },
+  radioButtonInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
 });
