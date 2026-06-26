@@ -1,0 +1,16 @@
+{
+  "short_name": "BlinkChat",
+  "name": "BlinkChat",
+  "description": "BlinkChat messaging application",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#2563EB",
+  "background_color": "#080A10"
+}

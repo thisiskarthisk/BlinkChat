@@ -11,10 +11,9 @@ import {
   rejectFriendRequest,
 } from "@/services/friendService";
 import { getCachedMessages } from "@/services/storageService";
+import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
-import * as FileSystem from "expo-file-system/legacy";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import {
   Camera,
@@ -27,13 +26,14 @@ import {
   Users,
   X
 } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
@@ -44,15 +44,52 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { decode as decodeBase64 } from "base64-arraybuffer";
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return decodeBase64(base64);
 }
 
+/** Hook: smoothly animates a translateY offset when the keyboard shows/hides inside a Modal. */
+function useKeyboardModalOffset() {
+  const offset = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(offset, {
+        toValue: -(e.endCoordinates.height),
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(offset, {
+        toValue: 0,
+        duration: (e as any)?.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [offset]);
+
+  return offset;
+}
+
 export default function ProfileScreen() {
   const { width } = useWindowDimensions();
   const isWebOrTablet = width > 768;
+
+  // Keyboard offset for profile edit & password modals
+  const kbOffset = useKeyboardModalOffset();
   const { user, profile, updateProfile, signOut } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -84,6 +121,7 @@ export default function ProfileScreen() {
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [showAvatarLightbox, setShowAvatarLightbox] = useState(false);
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [selectedMediaUri, setSelectedMediaUri] = useState<string | null>(null);
 
@@ -305,6 +343,7 @@ export default function ProfileScreen() {
 
       // Update local context profile state
       updateProfile({ avatar_url: publicUrl });
+      setEditAvatarUrl(publicUrl);
 
       Alert.alert("Success", "Profile picture updated successfully!");
     } catch (error: any) {
@@ -316,24 +355,28 @@ export default function ProfileScreen() {
   };
 
   const handleAvatarPress = () => {
-    Alert.alert(
-      "Profile Photo",
-      "Would you like to view your photo or change it?",
-      [
-        {
-          text: "View Photo",
-          onPress: () => setShowAvatarLightbox(true),
-        },
-        {
-          text: "Change Photo",
-          onPress: pickAndUploadAvatar,
-        },
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-      ]
-    );
+    if (Platform.OS === "web") {
+      setShowAvatarMenu(true);
+    } else {
+      Alert.alert(
+        "Profile Photo",
+        "Would you like to view your photo or change it?",
+        [
+          {
+            text: "View Photo",
+            onPress: () => setShowAvatarLightbox(true),
+          },
+          {
+            text: "Change Photo",
+            onPress: pickAndUploadAvatar,
+          },
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+        ]
+      );
+    }
   };
 
   // Setup form fields on edit open
@@ -519,7 +562,12 @@ export default function ProfileScreen() {
       />
 
       {/* 1. Futuristic Glass Header */}
-      <View style={[styles.glassHeader, { height: 60 + insets.top, paddingTop: insets.top, backgroundColor: cardBgColor, borderBottomColor: cardBorderColor }]}>
+      <View dataSet={{ name: 'app-header-profile' }} style={[styles.glassHeader, { 
+        height: Platform.OS === 'web' ? 60 : 60 + insets.top, 
+        paddingTop: Platform.OS === 'web' ? 0 : insets.top, 
+        backgroundColor: cardBgColor, 
+        borderBottomColor: cardBorderColor 
+      }]}>
         <View style={styles.headerLeft}>
           <Text style={[styles.headerGreeting, { color: colors.textSecondary }]}>Account Dashboard</Text>
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
@@ -539,75 +587,77 @@ export default function ProfileScreen() {
           <View style={styles.mobileFullWidth}>
             
             {/* WhatsApp-style Profile Card */}
-            <View style={[styles.profileGlassCard, { backgroundColor: cardBgColor, borderColor: cardBorderColor }]}>
-              {/* Cover Banner */}
-              <View style={styles.coverBanner}>
-                <LinearGradient
-                  colors={["#075E54", "#128C7E"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
-                />
-              </View>
-
-              {/* Avatar Center Row */}
-              <View style={{ alignItems: "center", marginTop: -60, marginBottom: 12 }}>
-                <TouchableOpacity onPress={handleAvatarPress} style={styles.avatarWrapperContainer} disabled={uploadingAvatar}>
-                  <View style={[styles.avatarBorderGlow, { borderColor: colors.background }]}>
-                    {profile?.avatar_url ? (
-                      <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
-                    ) : (
-                      <View style={[styles.avatarPlaceholder, { backgroundColor: colors.accent }]}>
-                        <Text style={styles.avatarInitials}>{userInitials}</Text>
-                      </View>
-                    )}
-                  </View>
-                  {uploadingAvatar ? (
-                    <View style={[StyleSheet.absoluteFill, styles.avatarLoaderContainer]}>
-                      <ActivityIndicator size="small" color="#FFF" />
-                    </View>
-                  ) : (
-                    <View style={[styles.editBadge, { backgroundColor: "#128C7E" }]}>
-                      <Camera size={12} color="#FFF" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              {/* Info Rows */}
-              <View style={styles.infoSection}>
-                {/* Full Name Row */}
-                <TouchableOpacity style={styles.infoRow} onPress={handleOpenEdit} activeOpacity={0.7}>
-                  <View style={styles.infoRowLeft}>
-                    <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>Name</Text>
-                    <Text style={[styles.infoRowValue, { color: colors.text }]}>{currentProfileName}</Text>
-                    <Text style={[styles.infoRowDesc, { color: colors.textSecondary }]}>This is not your username or PIN. This name will be visible to your BlinkChat contacts.</Text>
-                  </View>
-                  <Pencil size={16} color="#128C7E" style={{ marginLeft: 8 }} />
-                </TouchableOpacity>
-
-                <View style={styles.infoRowDivider} />
-
-                {/* Username Row */}
-                <View style={styles.infoRow}>
-                  <View style={styles.infoRowLeft}>
-                    <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>Username</Text>
-                    <Text style={[styles.infoRowValue, { color: colors.text }]}>@{profile?.username || "username"}</Text>
-                  </View>
+            <View>
+              <View style={[styles.profileGlassCard, { backgroundColor: cardBgColor, borderColor: cardBorderColor }]}>
+                {/* Cover Banner */}
+                <View style={styles.coverBanner}>
+                  <LinearGradient
+                    colors={["#075E54", "#128C7E"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
                 </View>
 
-                <View style={styles.infoRowDivider} />
+                {/* Avatar Center Row */}
+                <View style={{ alignItems: "center", marginTop: -60, marginBottom: 12 }}>
+                  <TouchableOpacity onPress={handleAvatarPress} style={styles.avatarWrapperContainer} disabled={uploadingAvatar}>
+                    <View style={[styles.avatarBorderGlow, { borderColor: colors.background }]}>
+                      {profile?.avatar_url ? (
+                        <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+                      ) : (
+                        <View style={[styles.avatarPlaceholder, { backgroundColor: colors.accent }]}>
+                          <Text style={styles.avatarInitials}>{userInitials}</Text>
+                        </View>
+                      )}
+                    </View>
+                    {uploadingAvatar ? (
+                      <View style={[StyleSheet.absoluteFill, styles.avatarLoaderContainer]}>
+                        <ActivityIndicator size="small" color="#FFF" />
+                      </View>
+                    ) : (
+                      <View style={[styles.editBadge, { backgroundColor: "#128C7E" }]}>
+                        <Camera size={12} color="#FFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
 
-                {/* About/Status Row */}
-                <TouchableOpacity style={styles.infoRow} onPress={handleOpenEdit} activeOpacity={0.7}>
-                  <View style={styles.infoRowLeft}>
-                    <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>About</Text>
-                    <Text style={[styles.infoRowValue, { color: colors.text }]} numberOfLines={2}>
-                      {profile?.status || `Hey there! I am using ${APP_CONFIG.appName}`}
-                    </Text>
+                {/* Info Rows */}
+                <View style={styles.infoSection}>
+                  {/* Full Name Row */}
+                  <TouchableOpacity style={styles.infoRow} onPress={handleOpenEdit} activeOpacity={0.7}>
+                    <View style={styles.infoRowLeft}>
+                      <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>Name</Text>
+                      <Text style={[styles.infoRowValue, { color: colors.text }]}>{currentProfileName}</Text>
+                      <Text style={[styles.infoRowDesc, { color: colors.textSecondary }]}>This is not your username or PIN. This name will be visible to your BlinkChat contacts.</Text>
+                    </View>
+                    <Pencil size={16} color="#128C7E" style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+
+                  <View style={styles.infoRowDivider} />
+
+                  {/* Username Row */}
+                  <View style={styles.infoRow}>
+                    <View style={styles.infoRowLeft}>
+                      <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>Username</Text>
+                      <Text style={[styles.infoRowValue, { color: colors.text }]}>@{profile?.username || "username"}</Text>
+                    </View>
                   </View>
-                  <Pencil size={16} color="#128C7E" style={{ marginLeft: 8 }} />
-                </TouchableOpacity>
+
+                  <View style={styles.infoRowDivider} />
+
+                  {/* About/Status Row */}
+                  <TouchableOpacity style={styles.infoRow} onPress={handleOpenEdit} activeOpacity={0.7}>
+                    <View style={styles.infoRowLeft}>
+                      <Text style={[styles.infoRowLabel, { color: "#128C7E" }]}>About</Text>
+                      <Text style={[styles.infoRowValue, { color: colors.text }]} numberOfLines={2}>
+                        {profile?.status || `Hey there! I am using ${APP_CONFIG.appName}`}
+                      </Text>
+                    </View>
+                    <Pencil size={16} color="#128C7E" style={{ marginLeft: 8 }} />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -923,21 +973,18 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* MODAL 3: Edit Profile */}
-      <Modal visible={showProfileEdit} transparent animationType="slide" onRequestClose={() => setShowProfileEdit(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowProfileEdit(false)}>
-          <KeyboardAvoidingView 
-            behavior="padding"
-            style={{ width: "100%", alignItems: "center", justifyContent: "flex-end" }}
-          >
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 500 }]}>
+      <Modal visible={showProfileEdit} transparent animationType="fade" onRequestClose={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
+        <TouchableOpacity style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} activeOpacity={1} onPress={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
+          <Animated.View style={[{ width: "90%", maxWidth: 500 }, { transform: [{ translateY: kbOffset }] }]}>
+            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: "80%" }]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile Details</Text>
-                <TouchableOpacity onPress={() => setShowProfileEdit(false)}>
+                <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
                   <X size={24} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.inputContainer}>
                   <Text style={[styles.inputLabel, { color: colors.text }]}>Full Name</Text>
                   <TextInput
@@ -996,26 +1043,23 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </ScrollView>
             </TouchableOpacity>
-          </KeyboardAvoidingView>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
 
       {/* MODAL 4: Change Password */}
-      <Modal visible={showPasswordChange} transparent animationType="slide" onRequestClose={() => setShowPasswordChange(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPasswordChange(false)}>
-          <KeyboardAvoidingView 
-            behavior="padding"
-            style={{ width: "100%", alignItems: "center", justifyContent: "flex-end" }}
-          >
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 500 }]}>
+      <Modal visible={showPasswordChange} transparent animationType="fade" onRequestClose={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
+        <TouchableOpacity style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} activeOpacity={1} onPress={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
+          <Animated.View style={[{ width: "90%", maxWidth: 500 }, { transform: [{ translateY: kbOffset }] }]}>
+            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: "80%" }]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Change Account Password</Text>
-                <TouchableOpacity onPress={() => setShowPasswordChange(false)}>
+                <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
                   <X size={24} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView contentContainerStyle={{ gap: 16, paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={{ gap: 16, paddingBottom: 24 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                 <View style={styles.inputContainer}>
                   <Text style={[styles.inputLabel, { color: colors.text }]}>New Secure Password</Text>
                   <TextInput
@@ -1055,7 +1099,7 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </ScrollView>
             </TouchableOpacity>
-          </KeyboardAvoidingView>
+          </Animated.View>
         </TouchableOpacity>
       </Modal>
 
@@ -1075,6 +1119,51 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
+      {/* MODAL 6: Avatar Options Menu for Web/PWA */}
+      <Modal
+        visible={showAvatarMenu}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAvatarMenu(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowAvatarMenu(false)}
+        >
+          <View style={[styles.avatarMenuContent, { backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1 }]}>
+            <Text style={[styles.avatarMenuTitle, { color: colors.text }]}>Profile Photo</Text>
+            
+            <TouchableOpacity 
+              style={[styles.avatarMenuItem, { borderBottomColor: colors.border, borderBottomWidth: 0.5 }]} 
+              onPress={() => {
+                setShowAvatarMenu(false);
+                setShowAvatarLightbox(true);
+              }}
+            >
+              <Text style={[styles.avatarMenuItemText, { color: colors.accent }]}>View Photo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.avatarMenuItem, { borderBottomColor: colors.border, borderBottomWidth: 0.5 }]} 
+              onPress={() => {
+                setShowAvatarMenu(false);
+                pickAndUploadAvatar();
+              }}
+            >
+              <Text style={[styles.avatarMenuItemText, { color: colors.accent }]}>Change Photo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.avatarMenuItem} 
+              onPress={() => setShowAvatarMenu(false)}
+            >
+              <Text style={[styles.avatarMenuItemText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* MODAL 6: Media grid Lightbox */}
       <Modal visible={selectedMediaUri !== null} transparent animationType="fade" onRequestClose={() => setSelectedMediaUri(null)}>
         <View style={styles.lightboxOverlay}>
@@ -1091,6 +1180,28 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  avatarMenuContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    alignItems: "center",
+  },
+  avatarMenuTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  avatarMenuItem: {
+    width: "100%",
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  avatarMenuItemText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
   container: {
     flex: 1,
   },
@@ -1145,17 +1256,27 @@ const styles = StyleSheet.create({
   },
 
   // Cards
+  // profileGlassCard: {
+  //   borderRadius: 24,
+  //   borderWidth: 1.5,
+  //   paddingBottom: 20,
+  //   shadowColor: "#000",
+  //   shadowOffset: { width: 0, height: 10 },
+  //   shadowOpacity: 0.08,
+  //   shadowRadius: 15,
+  //   elevation: 4,
+  //   overflow: "hidden",
+  // },
+
   profileGlassCard: {
     borderRadius: 24,
-    borderWidth: 1.5,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
     paddingBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-    elevation: 4,
     overflow: "hidden",
+    backgroundColor: "#FFFFFF",
   },
+
   coverBanner: {
     height: 120,
     borderTopLeftRadius: 22,
@@ -1258,14 +1379,12 @@ const styles = StyleSheet.create({
   settingsMenu: {
     borderRadius: 24,
     borderWidth: 1.5,
-    paddingVertical: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-    elevation: 4,
-    marginTop: 8,
+    borderColor: "#E5E5E5",
+    paddingBottom: 20,
+    overflow: "hidden",
+    backgroundColor: "#FFFFFF",
   },
+
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1729,7 +1848,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
-    fontSize: 14,
+    fontSize: 16,
   },
   saveBtn: {
     paddingVertical: 14,

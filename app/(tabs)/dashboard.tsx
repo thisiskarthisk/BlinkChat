@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -35,6 +36,7 @@ import {
 export default function DashboardScreen() {
   const { user, profile } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [companyUsers, setCompanyUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -695,7 +697,12 @@ Please log in and update your password under settings.`;
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header bar */}
-      <View style={[styles.headerBar, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+      <View dataSet={{ name: 'app-header-dashboard' }} style={[styles.headerBar, { 
+        height: Platform.OS === 'web' ? 60 : 60 + insets.top,
+        paddingTop: Platform.OS === 'web' ? 0 : insets.top,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.surface 
+      }]}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <LayoutDashboard size={24} color={colors.accent} style={{ marginRight: 8 }} />
           <Text style={[styles.headerTitle, { color: colors.text }]}>Business Dashboard</Text>
@@ -1337,7 +1344,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     padding: 12,
-    fontSize: 14,
+    fontSize: 16,
   },
   submitBtn: {
     paddingVertical: 14,

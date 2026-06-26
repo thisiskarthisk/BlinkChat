@@ -417,6 +417,9 @@ export default function ChatSettingsModal({
   // Lock State
   const [isLockedLocal, setIsLockedLocal] = useState(false);
   const [showPinSetup, setShowPinSetup] = useState(false);
+  const [showPinVerify, setShowPinVerify] = useState(false);
+  const [showUnlockConfirm, setShowUnlockConfirm] = useState(false); // inline unlock confirmation for web (replaces window.confirm)
+  const [verifyPin, setVerifyPin] = useState("");
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [step, setStep] = useState<"enter" | "confirm">("enter");
@@ -438,12 +441,33 @@ export default function ChatSettingsModal({
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
 
   useEffect(() => {
-    if (otherUser?.id) {
+    if (visible && otherUser?.id) {
       loadBackgroundConfiguration();
       checkLockStatus();
       checkMuteStatus();
     }
-  }, [otherUser?.id]);
+  }, [visible, otherUser?.id]);
+
+  const renderModalWrapper = (visibleFlag: boolean, content: React.ReactNode) => {
+    if (!visibleFlag) return null;
+    if (Platform.OS === 'web') {
+      return (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000 }}>
+          {content}
+        </View>
+      );
+    }
+    return (
+      <Modal visible={visibleFlag} transparent animationType="fade">
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          {content}
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  };
 
   const checkMuteStatus = async () => {
     if (!user?.id || !otherUser?.id) return;
@@ -608,6 +632,14 @@ export default function ChatSettingsModal({
         return;
       }
 
+      // Web: biometrics and Alert.prompt are not available.
+      // If PIN already set → show verify modal; otherwise → show set PIN modal.
+      if (Platform.OS === 'web') {
+        setVerifyPin("");
+        setShowPinVerify(true);
+        return;
+      }
+
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
@@ -643,21 +675,33 @@ export default function ChatSettingsModal({
   const proceedToLock = async () => {
     await AsyncStorage.setItem(`chat_locked_${user?.id}_${otherUser.id}`, "true");
     setIsLockedLocal(true);
-    Alert.alert("Success", "Chat has been locked.");
+    if (Platform.OS === 'web') {
+      // Alert.alert() shows only an OK button on web; use it as a simple toast notification
+      Alert.alert("Chat Locked", "This chat is now secured.");
+    } else {
+      Alert.alert("Success", "Chat has been locked.");
+    }
   };
 
   const handleToggleLock = () => {
     if (isLockedLocal) {
-      Alert.alert("Unlock Chat", "Are you sure you want to unlock this chat?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Unlock",
-          onPress: async () => {
-            await AsyncStorage.removeItem(`chat_locked_${user?.id}_${otherUser.id}`);
-            setIsLockedLocal(false);
+      // On web/PWA, window.confirm() and Alert.alert() with multiple buttons
+      // are unreliable (blocked by browser security policies on some Android devices).
+      // Use our own inline modal for a guaranteed cross-platform unlock confirmation.
+      if (Platform.OS === 'web') {
+        setShowUnlockConfirm(true);
+      } else {
+        Alert.alert("Unlock Chat", "Are you sure you want to unlock this chat?", [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Unlock",
+            onPress: async () => {
+              await AsyncStorage.removeItem(`chat_locked_${user?.id}_${otherUser.id}`);
+              setIsLockedLocal(false);
+            },
           },
-        },
-      ]);
+        ]);
+      }
     } else {
       authenticateAndLock();
     }
@@ -683,19 +727,22 @@ export default function ChatSettingsModal({
     try {
       await AsyncStorage.setItem(`chat_pin_${user?.id}`, pin);
 
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      // On web biometrics aren't available — proceed directly to lock
+      if (Platform.OS !== 'web') {
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-      if (hasHardware && isEnrolled) {
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: "Authenticate to lock this chat",
-          fallbackLabel: "Use PIN",
-        });
+        if (hasHardware && isEnrolled) {
+          const result = await LocalAuthentication.authenticateAsync({
+            promptMessage: "Authenticate to lock this chat",
+            fallbackLabel: "Use PIN",
+          });
 
-        if (result.success) {
-          await proceedToLock();
-          setShowPinSetup(false);
-          return;
+          if (result.success) {
+            await proceedToLock();
+            setShowPinSetup(false);
+            return;
+          }
         }
       }
 
@@ -984,49 +1031,124 @@ export default function ChatSettingsModal({
         </ScrollView>
 
         {/* PIN Setup Modal */}
-        <Modal visible={showPinSetup} transparent animationType="fade">
-          <KeyboardAvoidingView 
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={{ flex: 1 }}
-          >
-            <View style={styles.pinModalOverlay}>
-              <View style={styles.pinModalContent}>
-                <Text style={styles.pinModalTitle}>
-                  {step === "enter" ? "Set Chat PIN" : "Confirm Chat PIN"}
-                </Text>
-                <Text style={styles.pinModalSub}>Enter a 4-digit PIN to lock this chat</Text>
-                
-                <TextInput
-                  style={styles.pinInput}
-                  value={step === "enter" ? pin : confirmPin}
-                  onChangeText={step === "enter" ? setPin : setConfirmPin}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  secureTextEntry
-                  autoFocus
-                  placeholder="****"
-                />
+        {renderModalWrapper(
+          showPinSetup,
+          <View style={styles.pinModalOverlay}>
+            <View style={styles.pinModalContent}>
+              <Text style={styles.pinModalTitle}>
+                {step === "enter" ? "Set Chat PIN" : "Confirm Chat PIN"}
+              </Text>
+              <Text style={styles.pinModalSub}>Enter a 4-digit PIN to lock this chat</Text>
+              
+              <TextInput
+                style={styles.pinInput}
+                value={step === "enter" ? pin : confirmPin}
+                onChangeText={step === "enter" ? setPin : setConfirmPin}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                autoFocus
+                placeholder="****"
+              />
 
-                <View style={styles.pinModalActions}>
-                  <TouchableOpacity 
-                    style={styles.pinCancelBtn} 
-                    onPress={() => setShowPinSetup(false)}
-                  >
-                    <Text style={styles.pinCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.pinSubmitBtn} 
-                    onPress={step === "enter" ? handlePinSubmit : handleConfirmPinSubmit}
-                  >
-                    <Text style={styles.pinSubmitText}>
-                      {step === "enter" ? "Next" : "Lock Chat"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.pinModalActions}>
+                <TouchableOpacity 
+                  style={styles.pinCancelBtn} 
+                  onPress={() => setShowPinSetup(false)}
+                >
+                  <Text style={styles.pinCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.pinSubmitBtn} 
+                  onPress={step === "enter" ? handlePinSubmit : handleConfirmPinSubmit}
+                >
+                  <Text style={styles.pinSubmitText}>
+                    {step === "enter" ? "Next" : "Lock Chat"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </KeyboardAvoidingView>
-        </Modal>
+          </View>
+        )}
+
+        {/* PIN Verify Modal — shown on web when user has an existing PIN and taps Lock */}
+        {renderModalWrapper(
+          showPinVerify,
+          <View style={styles.pinModalOverlay}>
+            <View style={styles.pinModalContent}>
+              <Text style={styles.pinModalTitle}>Verify PIN</Text>
+              <Text style={styles.pinModalSub}>Enter your 4-digit Chat Lock PIN</Text>
+
+              <TextInput
+                style={styles.pinInput}
+                value={verifyPin}
+                onChangeText={setVerifyPin}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                autoFocus
+                placeholder="****"
+              />
+
+              <View style={styles.pinModalActions}>
+                <TouchableOpacity
+                  style={styles.pinCancelBtn}
+                  onPress={() => { setShowPinVerify(false); setVerifyPin(""); }}
+                >
+                  <Text style={styles.pinCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.pinSubmitBtn}
+                  onPress={async () => {
+                    const globalPin = await AsyncStorage.getItem(`chat_pin_${user?.id}`);
+                    if (verifyPin === globalPin) {
+                      setShowPinVerify(false);
+                      setVerifyPin("");
+                      await proceedToLock();
+                    } else {
+                      Alert.alert("Error", "Incorrect PIN");
+                      setVerifyPin("");
+                    }
+                  }}
+                >
+                  <Text style={styles.pinSubmitText}>Lock Chat</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Inline Unlock Confirmation Modal — used on web/PWA where window.confirm()
+            and multi-button Alert.alert() are unreliable (blocked by some browsers). */}
+        {renderModalWrapper(
+          showUnlockConfirm,
+          <View style={styles.pinModalOverlay}>
+            <View style={[styles.pinModalContent, { paddingVertical: 24 }]}>
+              <Text style={[styles.pinModalTitle, { marginBottom: 8 }]}>Unlock Chat?</Text>
+              <Text style={[styles.pinModalSub, { marginBottom: 24 }]}>
+                This will remove the lock from this chat room. Are you sure?
+              </Text>
+              <View style={styles.pinModalActions}>
+                <TouchableOpacity
+                  style={styles.pinCancelBtn}
+                  onPress={() => setShowUnlockConfirm(false)}
+                >
+                  <Text style={styles.pinCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pinSubmitBtn, { backgroundColor: "#EF4444" }]}
+                  onPress={async () => {
+                    setShowUnlockConfirm(false);
+                    await AsyncStorage.removeItem(`chat_locked_${user?.id}_${otherUser.id}`);
+                    setIsLockedLocal(false);
+                  }}
+                >
+                  <Text style={styles.pinSubmitText}>Unlock</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Media Hub Modal */}
         <Modal 

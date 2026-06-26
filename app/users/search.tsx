@@ -253,6 +253,7 @@ import {
   Alert,
   FlatList,
   Image,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -416,7 +417,11 @@ export default function SearchScreen() {
         setActionId(null);
       }
     } else if (request && request.status === "pending") {
-      Alert.alert("Request Pending", "You have already sent a request to this user.");
+      if (Platform.OS === "web") {
+        window.alert("Request Pending: You have already sent a request to this user.");
+      } else {
+        Alert.alert("Request Pending", "You have already sent a request to this user.");
+      }
     } else {
       // Send Request (New or Re-send if rejected)
       const actionTitle = request?.status === "rejected" ? "Re-send Request" : "Send Request";
@@ -424,27 +429,44 @@ export default function SearchScreen() {
         ? `This user previously rejected your request. Do you want to try sending it again?`
         : `Do you want to send a chat request to ${selectedUser.full_name}?`;
 
-      Alert.alert(
-        actionTitle,
-        actionMsg,
-        [
-          { text: "Cancel", style: "cancel" },
-          { 
-            text: "Send", 
-            onPress: async () => {
-              setActionId(selectedUser.id);
-              const { error } = await sendFriendRequest(user.id, selectedUser.id);
-              if (error) {
-                Alert.alert("Error", error);
-              } else {
-                Alert.alert("Success", "Request sent!");
-                loadData();
-              }
-              setActionId(null);
+      if (Platform.OS === "web") {
+        const confirmSend = window.confirm(actionMsg);
+        if (confirmSend) {
+          (async () => {
+            setActionId(selectedUser.id);
+            const { error } = await sendFriendRequest(user.id, selectedUser.id);
+            if (error) {
+              window.alert(`Error: ${error}`);
+            } else {
+              window.alert("Success: Request sent!");
+              loadData();
             }
-          }
-        ]
-      );
+            setActionId(null);
+          })();
+        }
+      } else {
+        Alert.alert(
+          actionTitle,
+          actionMsg,
+          [
+            { text: "Cancel", style: "cancel" },
+            { 
+              text: "Send", 
+              onPress: async () => {
+                setActionId(selectedUser.id);
+                const { error } = await sendFriendRequest(user.id, selectedUser.id);
+                if (error) {
+                  Alert.alert("Error", error);
+                } else {
+                  Alert.alert("Success", "Request sent!");
+                  loadData();
+                }
+                setActionId(null);
+              }
+            }
+          ]
+        );
+      }
     }
   };
 
@@ -500,7 +522,7 @@ export default function SearchScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View dataSet={{ name: 'app-header' }} style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
@@ -601,7 +623,7 @@ const styles = StyleSheet.create({
 
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     color: "#111827",
   },
 

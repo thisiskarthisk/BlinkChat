@@ -17,8 +17,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import WebSplitScreenLayout from "../../components/WebSplitScreenLayout";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { APP_CONFIG } from "../../constants/config";
 import { useTheme } from "../../hooks/use-theme";
 import { useAuth } from "../../hooks/useAuth";
@@ -133,8 +135,11 @@ function getMessagePreview(lastMessage: any) {
 
 export default function HomeScreen() {
   const { user, signOut } = useAuth();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  if (Platform.OS === "web") {
+  if (isDesktop) {
     return <WebSplitScreenLayout />;
   }
   const { colors } = useTheme();
@@ -563,7 +568,11 @@ export default function HomeScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View dataSet={{ name: 'app-header-home' }} style={[styles.header, { 
+        paddingTop: Platform.OS === 'web' 
+          ? 16
+          : (insets.top > 0 ? insets.top + 12 : 16) 
+      }]}>
         <TouchableOpacity onPress={() => setShowLockedSection(!showLockedSection)}>
           <Text style={styles.headerTitle}>{APP_CONFIG.appName}</Text>
           <Text style={styles.headerSub}>

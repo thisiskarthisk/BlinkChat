@@ -6,17 +6,20 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
 import { View, Image, ActivityIndicator } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 let isSplashHidden = false;
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <CustomThemeProvider>
-        <RootNav />
-      </CustomThemeProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <CustomThemeProvider>
+          <RootNav />
+        </CustomThemeProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 

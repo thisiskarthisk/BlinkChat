@@ -1,35 +1,48 @@
-import React, { useState, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Image,
-  ActivityIndicator,
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  Home,
-  Settings as SettingsIcon,
-  LayoutDashboard,
-  LogOut,
-  Search,
-  Send,
-  Paperclip,
-  Camera,
-  Image as ImageIcon,
-  Plus,
-} from "lucide-react-native";
-import { useAuth } from "@/hooks/useAuth";
+import { APP_CONFIG } from "@/constants/config";
+import { ThemeName, Themes } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import { createOrGetChat, ensureCompanyChats, sendMessage } from "@/services/chatService";
-import { getCachedMessages } from "@/services/storageService";
-import { APP_CONFIG } from "@/constants/config";
 import { sendPushForNewEmployee } from "@/services/pushNotificationService";
+import { checkAutoDeletePolicy, getCachedMessages, performFullDataWipe, updateAutoDeletePolicy } from "@/services/storageService";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  ChevronRight,
+  Database,
+  Download,
+  Home,
+  Image as ImageIcon,
+  LayoutDashboard,
+  Lock,
+  LogOut,
+  Palette,
+  Paperclip,
+  Plus,
+  Search,
+  Send,
+  Settings as SettingsIcon,
+  Shield,
+  Trash2,
+  User,
+  X
+} from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from "react-native";
 
 function getInitials(name: string) {
   if (!name) return "?";
@@ -170,7 +183,7 @@ function getMessagePreview(lastMessage: any) {
 
 export default function WebSplitScreenLayout() {
   const { user, profile, signOut, updateProfile } = useAuth();
-  const { colors } = useTheme();
+  const { themeName, setTheme, colors } = useTheme();
 
   // Tab State: 'chats' | 'dashboard' | 'settings'
   const [activeTab, setActiveTab] = useState<"chats" | "dashboard" | "settings">("chats");
@@ -223,6 +236,153 @@ export default function WebSplitScreenLayout() {
   const [editStatus, setEditStatus] = useState(profile?.status || "");
   const [editAvatarUrl, setEditAvatarUrl] = useState(profile?.avatar_url || "");
   const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  // Settings States
+  const [showWebSettings, setShowWebSettings] = useState(false);
+  const [autoDeleteInfo, setAutoDeleteInfo] = useState<any>(null);
+  const [autoDeleteEnabled, setAutoDeleteEnabled] = useState(false);
+  const [autoDeleteDays, setAutoDeleteDays] = useState(7);
+  const [chatPin, setChatPin] = useState("");
+  const [showWebPinModal, setShowWebPinModal] = useState(false);
+  const [newPin, setNewPin] = useState("");
+
+  const loadSettingsConfig = async () => {
+    if (!user?.id) return;
+    try {
+      const info = await checkAutoDeletePolicy(user.id);
+      setAutoDeleteInfo(info);
+      setAutoDeleteEnabled(info.enabled);
+      setAutoDeleteDays(info.days);
+
+      const pin = await AsyncStorage.getItem(`chat_pin_${user.id}`);
+      setChatPin(pin || "");
+    } catch (e) {
+      console.log("loadSettingsConfig error:", e);
+    }
+  };
+
+  useEffect(() => {
+    setShowWebSettings(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "settings" && showWebSettings) {
+      loadSettingsConfig();
+    }
+  }, [activeTab, showWebSettings]);
+
+  const handleToggleAutoDelete = async (value: boolean) => {
+    if (!user?.id) return;
+    try {
+      setAutoDeleteEnabled(value);
+      await updateAutoDeletePolicy(value, autoDeleteDays);
+      const info = await checkAutoDeletePolicy(user.id);
+      setAutoDeleteInfo(info);
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
+  };
+
+  const handleChangeDays = async (days: number) => {
+    if (!user?.id) return;
+    try {
+      setAutoDeleteDays(days);
+      await updateAutoDeletePolicy(autoDeleteEnabled, days);
+      const info = await checkAutoDeletePolicy(user.id);
+      setAutoDeleteInfo(info);
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
+  };
+
+  const handleSavePin = async () => {
+    if (!user?.id) return;
+    if (newPin.length !== 4 || isNaN(Number(newPin))) {
+      alert("PIN must be exactly 4 digits.");
+      return;
+    }
+    try {
+      await AsyncStorage.setItem(`chat_pin_${user.id}`, newPin);
+      setChatPin(newPin);
+      setShowWebPinModal(false);
+      setNewPin("");
+      alert("Backup Chat PIN saved successfully!");
+    } catch (e) {
+      alert("Failed to save PIN.");
+    }
+  };
+
+  const handleBackup = async () => {
+    if (!user?.id) return;
+    try {
+      const { data: myChats } = await supabase
+        .from("chat_members")
+        .select("chat_id")
+        .eq("user_id", user.id);
+
+      const backupData: any = {
+        backupDate: new Date().toISOString(),
+        userId: user.id,
+        chats: [],
+      };
+
+      if (myChats?.length) {
+        for (const chat of myChats) {
+          const chatId = chat.chat_id;
+          const cachedMsgs = await getCachedMessages(chatId);
+
+          const { data: otherMember } = await supabase
+            .from("chat_members")
+            .select("user_id")
+            .eq("chat_id", chatId)
+            .neq("user_id", user.id)
+            .maybeSingle();
+
+          let otherProfile = null;
+          if (otherMember) {
+            const { data } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("id", otherMember.user_id)
+              .maybeSingle();
+            otherProfile = data;
+          }
+
+          backupData.chats.push({
+            chatId,
+            otherUser: otherProfile,
+            messages: cachedMsgs,
+          });
+        }
+      }
+
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `blinkchat_backup_${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+      alert("Backup successfully exported!");
+    } catch (e: any) {
+      alert("Backup error: " + e.message);
+    }
+  };
+
+  const handleWipeData = async () => {
+    if (!user?.id) return;
+    const confirm = window.confirm("Are you absolutely sure you want to wipe all chat data from cloud and local storage? This cannot be undone.");
+    if (!confirm) return;
+    try {
+      await performFullDataWipe(user.id);
+      alert("All data has been successfully wiped.");
+      loadChats();
+    } catch (e: any) {
+      alert("Wipe error: " + e.message);
+    }
+  };
 
   // Dashboard / Admin States
   const [companyUsers, setCompanyUsers] = useState<any[]>([]);
@@ -940,12 +1100,12 @@ export default function WebSplitScreenLayout() {
           if (chatId) {
             const welcomeMsg = `Welcome to the company! Your account has been successfully created. You can now chat securely with all members of our organization.
 
-Here are your login credentials:
-Email: ${email.trim().toLowerCase()}
-Password: ${password}
+              Here are your login credentials:
+              Email: ${email.trim().toLowerCase()}
+              Password: ${password}
 
-Please log in and update your password under settings.`;
-            await sendMessage(chatId, user.id, welcomeMsg);
+              Please log in and update your password under settings.`;
+              await sendMessage(chatId, user.id, welcomeMsg);
           }
         }
 
@@ -1045,8 +1205,8 @@ Please log in and update your password under settings.`;
             style={[styles.menuItem, activeTab === "settings" && { backgroundColor: colors.backgroundSelected }]}
             onPress={() => setActiveTab("settings")}
           >
-            <SettingsIcon size={20} color={activeTab === "settings" ? colors.accent : colors.textSecondary} />
-            <Text style={[styles.menuLabel, { color: activeTab === "settings" ? colors.accent : colors.text }]}>Settings</Text>
+            <User size={20} color={activeTab === "settings" ? colors.accent : colors.textSecondary} />
+            <Text style={[styles.menuLabel, { color: activeTab === "settings" ? colors.accent : colors.text }]}>Profile</Text>
           </TouchableOpacity>
         </View>
 
@@ -1141,129 +1301,363 @@ Please log in and update your password under settings.`;
         {/* Settings Tab Middle Panel */}
         {activeTab === "settings" && (
           <View style={styles.paneContent}>
-            <View style={styles.paneHeader}>
-              <Text style={[styles.paneTitle, { color: colors.text }]}>Settings</Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
-                Manage profile & chat with other users.
-              </Text>
+            <View style={[styles.paneHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.paneTitle, { color: colors.text }]}>
+                  {showWebSettings ? "App Settings" : "Profile Settings"}
+                </Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4 }}>
+                  {showWebSettings ? "Manage app themes, privacy settings, and data retention." : "Manage profile & chat with other users."}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowWebSettings(prev => !prev)}
+                style={{ backgroundColor: colors.accent + "15", padding: 8, borderRadius: 8 }}
+              >
+                {showWebSettings ? <ArrowLeft size={18} color={colors.accent} /> : <SettingsIcon size={18} color={colors.accent} />}
+              </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
-              {/* Profile Card upload */}
-              <View style={[styles.settingsCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <TouchableOpacity onPress={() => triggerFileUpload("avatar")} style={styles.settingsAvatarWrapper}>
-                  {editAvatarUrl ? (
-                    <Image source={{ uri: editAvatarUrl }} style={styles.settingsAvatar} />
-                  ) : (
-                    <View style={[styles.settingsAvatarPlaceholder, { backgroundColor: colors.accent }]}>
-                      <Text style={styles.settingsInitials}>{getInitials(editFullName || editUsername)}</Text>
-                    </View>
-                  )}
-                  <View style={[styles.settingsAvatarBadge, { backgroundColor: colors.accent }]}>
-                    <Camera size={14} color="#FFF" />
+            {showWebSettings ? (
+              /* Web App Settings options (themes, PIN, backup, wipe data) */
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
+                {/* Theme Section */}
+                <View style={[styles.settingsCard, { backgroundColor: colors.background, borderColor: colors.border, marginBottom: 16 }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                    <Palette size={20} color={colors.accent} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>App Palette & Theme</Text>
                   </View>
-                </TouchableOpacity>
+                  <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 12 }}>
+                    Change the layout visuals instantly. Dark and Light configurations available.
+                  </Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      justifyContent: "space-between",
+                      paddingVertical: 8,
+                    }}
+                  >
+                    {Object.keys(Themes).map((key) => {
+                      const item = Themes[key as ThemeName];
+                      const isSelected = themeName === key;
 
-                <View style={styles.formGroup}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Full Name</Text>
-                  <TextInput
-                    style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                    value={editFullName}
-                    onChangeText={setEditFullName}
-                    placeholder="E.g. John Doe"
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Username</Text>
-                  <TextInput
-                    style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                    value={editUsername}
-                    onChangeText={setEditUsername}
-                    placeholder="E.g. johndoe"
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Status</Text>
-                  <TextInput
-                    style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
-                    value={editStatus}
-                    onChangeText={setEditStatus}
-                    placeholder="E.g. Hey there!"
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.saveBtn, { backgroundColor: colors.accent }]}
-                  onPress={handleSaveProfile}
-                  disabled={updatingProfile}
-                >
-                  {updatingProfile ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : (
-                    <Text style={styles.saveBtnText}>Save Profile</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              {/* All Users section */}
-              <View style={{ marginTop: 24 }}>
-                <Text style={[styles.subSectionTitle, { color: colors.text }]}>System Directory</Text>
-                <View style={[styles.searchBox, { backgroundColor: colors.background, marginHorizontal: 0, marginTop: 8, marginBottom: 12 }]}>
-                  <Search size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
-                  <TextInput
-                    placeholder="Search users to chat..."
-                    placeholderTextColor={colors.textSecondary}
-                    value={usersSearch}
-                    onChangeText={setUsersSearch}
-                    style={[styles.searchInputField, { color: colors.text }]}
-                  />
-                </View>
-
-                {usersLoading ? (
-                  <ActivityIndicator size="small" color={colors.accent} style={{ paddingVertical: 12 }} />
-                ) : filteredUsers.length === 0 ? (
-                  <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center" }}>No other users found.</Text>
-                ) : (
-                  <View style={{ gap: 8 }}>
-                    {filteredUsers.map((item) => {
-                      const name = item.full_name || item.username || "User";
                       return (
                         <TouchableOpacity
-                          key={item.id}
-                          style={[styles.userRow, { backgroundColor: colors.background, borderColor: colors.border }]}
-                          onPress={() => handleStartChatWithUser(item)}
+                          key={key}
+                          onPress={() => setTheme(key as ThemeName)}
+                          style={{
+                            width: "23%", // 4 cards per row
+                            aspectRatio: 0.8,
+                            marginBottom: 12,
+                            borderRadius: 12,
+                            padding: 6,
+                            backgroundColor: item.background,
+                            borderWidth: isSelected ? 2 : 1,
+                            borderColor: isSelected ? colors.accent : item.border,
+                            alignItems: "center",
+                          }}
                         >
-                          {item.avatar_url ? (
-                            <Image source={{ uri: item.avatar_url }} style={styles.userRowAvatar} />
-                          ) : (
-                            <View style={[styles.userRowAvatarPlaceholder, { backgroundColor: colors.accent }]}>
-                              <Text style={styles.userRowInitials}>{getInitials(name)}</Text>
+                          {/* Preview */}
+                          <View
+                            style={{
+                              width: "100%",
+                              flex: 1,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: item.border,
+                              backgroundColor: item.background,
+                              padding: 5,
+                              justifyContent: "space-between",
+                            }}
+                          >
+                            <View
+                              style={{
+                                width: "70%",
+                                height: 6,
+                                borderRadius: 3,
+                                backgroundColor: "#E5E7EB",
+                              }}
+                            />
+
+                            <View
+                              style={{
+                                alignSelf: "flex-end",
+                                width: "55%",
+                                height: 6,
+                                borderRadius: 3,
+                                backgroundColor: item.accent,
+                              }}
+                            />
+
+                            <View
+                              style={{
+                                width: "80%",
+                                height: 6,
+                                borderRadius: 3,
+                                backgroundColor: "#E5E7EB",
+                              }}
+                            />
+                          </View>
+
+                          <Text
+                            numberOfLines={1}
+                            style={{
+                              marginTop: 6,
+                              fontSize: 11,
+                              fontWeight: "600",
+                              color: item.text,
+                            }}
+                          >
+                            {key}
+                          </Text>
+
+                          {isSelected && (
+                            <View
+                              style={{
+                                position: "absolute",
+                                top: 4,
+                                right: 4,
+                                width: 18,
+                                height: 18,
+                                borderRadius: 9,
+                                backgroundColor: colors.accent,
+                                justifyContent: "center",
+                                alignItems: "center",
+                              }}
+                            >
+                              <Check size={10} color="#FFF" />
                             </View>
                           )}
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={[styles.userRowName, { color: colors.text }]}>{name}</Text>
-                            <Text style={[styles.userRowStatus, { color: colors.textSecondary }]} numberOfLines={1}>
-                              {item.status || "Hey there!"}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            style={[styles.startChatBtn, { backgroundColor: colors.accent + "15" }]}
-                            onPress={() => handleStartChatWithUser(item)}
-                          >
-                            <Text style={[styles.startChatBtnText, { color: colors.accent }]}>Chat</Text>
-                          </TouchableOpacity>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
-                )}
-              </View>
-            </ScrollView>
+                </View>
+
+                {/* Data Retention & Privacy Section */}
+                <View style={[styles.settingsCard, { backgroundColor: colors.background, borderColor: colors.border, marginBottom: 16 }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                    <Database size={20} color={colors.accent} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>Data Retention & Backup</Text>
+                  </View>
+
+                  {/* Auto Delete Toggle */}
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 }}>
+                    <View style={{ flex: 1, paddingRight: 16 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text }}>Auto-Delete App Data</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                        Automatically clear older chats and media periodically
+                      </Text>
+                    </View>
+                    <Switch
+                      value={autoDeleteEnabled}
+                      onValueChange={handleToggleAutoDelete}
+                      thumbColor={autoDeleteEnabled ? colors.accent : "#ccc"}
+                      trackColor={{ true: colors.accent + "50", false: "#eee" }}
+                    />
+                  </View>
+
+                  {/* Days select row */}
+                  {autoDeleteEnabled && (
+                    <View style={{ marginTop: 8, marginBottom: 16 }}>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: colors.text, marginBottom: 8 }}>Retention Period</Text>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                        {[1, 3, 7, 15, 30].map((d) => {
+                          const active = autoDeleteDays === d;
+                          return (
+                            <TouchableOpacity
+                              key={d}
+                              style={{
+                                paddingVertical: 6,
+                                paddingHorizontal: 12,
+                                borderRadius: 16,
+                                backgroundColor: active ? colors.accent : colors.backgroundSelected,
+                              }}
+                              onPress={() => handleChangeDays(d)}
+                            >
+                              <Text style={{ fontSize: 12, color: active ? "#FFF" : colors.text, fontWeight: "600" }}>
+                                {d === 1 ? "24 Hours" : `${d} Days`}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Backup / Wipe actions */}
+                  <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
+
+                  <TouchableOpacity
+                    style={{ flexDirection: "row", alignItems: "center", paddingVertical: 8 }}
+                    onPress={handleBackup}
+                  >
+                    <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.backgroundSelected, alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                      <Download size={16} color={colors.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: colors.text }}>Backup Chats History</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>Export chat archives to your local downloads folder</Text>
+                    </View>
+                    <ChevronRight size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{ flexDirection: "row", alignItems: "center", paddingVertical: 8 }}
+                    onPress={handleWipeData}
+                  >
+                    <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.error + "15", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                      <Trash2 size={16} color={colors.error} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontWeight: "600", color: colors.error }}>Wipe App Data</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary }}>Permanently delete all chat history and files from the cloud</Text>
+                    </View>
+                    <ChevronRight size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Security PIN Section */}
+                <View style={[styles.settingsCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+                    <Shield size={20} color={colors.accent} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.text }}>Privacy & Chat Lock</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 12 }}
+                    onPress={() => setShowWebPinModal(true)}
+                  >
+                    <View style={{ flex: 1, paddingRight: 16 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text }}>Setup/Change Chat PIN</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                        {chatPin ? "4-digit backup PIN is active" : "Configure backup PIN for locked chats"}
+                      </Text>
+                    </View>
+                    <Lock size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            ) : (
+              /* Original Profile inputs & System directory */
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 16 }}>
+                {/* Profile Card upload */}
+                <View style={[styles.settingsCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                  <TouchableOpacity onPress={() => triggerFileUpload("avatar")} style={styles.settingsAvatarWrapper}>
+                    {editAvatarUrl ? (
+                      <Image source={{ uri: editAvatarUrl }} style={styles.settingsAvatar} />
+                    ) : (
+                      <View style={[styles.settingsAvatarPlaceholder, { backgroundColor: colors.accent }]}>
+                        <Text style={styles.settingsInitials}>{getInitials(editFullName || editUsername)}</Text>
+                      </View>
+                    )}
+                    <View style={[styles.settingsAvatarBadge, { backgroundColor: colors.accent }]}>
+                      <Camera size={14} color="#FFF" />
+                    </View>
+                  </TouchableOpacity>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Full Name</Text>
+                    <TextInput
+                      style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                      value={editFullName}
+                      onChangeText={setEditFullName}
+                      placeholder="E.g. John Doe"
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Username</Text>
+                    <TextInput
+                      style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                      value={editUsername}
+                      onChangeText={setEditUsername}
+                      placeholder="E.g. johndoe"
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={[styles.formLabel, { color: colors.text }]}>Status</Text>
+                    <TextInput
+                      style={[styles.formInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surface }]}
+                      value={editStatus}
+                      onChangeText={setEditStatus}
+                      placeholder="E.g. Hey there!"
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.saveBtn, { backgroundColor: colors.accent }]}
+                    onPress={handleSaveProfile}
+                    disabled={updatingProfile}
+                  >
+                    {updatingProfile ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text style={styles.saveBtnText}>Save Profile</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {/* All Users section */}
+                <View style={{ marginTop: 24 }}>
+                  <Text style={[styles.subSectionTitle, { color: colors.text }]}>System Directory</Text>
+                  <View style={[styles.searchBox, { backgroundColor: colors.background, marginHorizontal: 0, marginTop: 8, marginBottom: 12 }]}>
+                    <Search size={16} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                    <TextInput
+                      placeholder="Search users to chat..."
+                      placeholderTextColor={colors.textSecondary}
+                      value={usersSearch}
+                      onChangeText={setUsersSearch}
+                      style={[styles.searchInputField, { color: colors.text }]}
+                    />
+                  </View>
+
+                  {usersLoading ? (
+                    <ActivityIndicator size="small" color={colors.accent} style={{ paddingVertical: 12 }} />
+                  ) : filteredUsers.length === 0 ? (
+                    <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center" }}>No other users found.</Text>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {filteredUsers.map((item) => {
+                        const name = item.full_name || item.username || "User";
+                        return (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={[styles.userRow, { backgroundColor: colors.background, borderColor: colors.border }]}
+                            onPress={() => handleStartChatWithUser(item)}
+                          >
+                            {item.avatar_url ? (
+                              <Image source={{ uri: item.avatar_url }} style={styles.userRowAvatar} />
+                            ) : (
+                              <View style={[styles.userRowAvatarPlaceholder, { backgroundColor: colors.accent }]}>
+                                <Text style={styles.userRowInitials}>{getInitials(name)}</Text>
+                              </View>
+                            )}
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <Text style={[styles.userRowName, { color: colors.text }]}>{name}</Text>
+                              <Text style={[styles.userRowStatus, { color: colors.textSecondary }]} numberOfLines={1}>
+                                {item.status || "Hey there!"}
+                              </Text>
+                            </View>
+                            <TouchableOpacity
+                              style={[styles.startChatBtn, { backgroundColor: colors.accent + "15" }]}
+                              onPress={() => handleStartChatWithUser(item)}
+                            >
+                              <Text style={[styles.startChatBtnText, { color: colors.accent }]}>Chat</Text>
+                            </TouchableOpacity>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+            )}
           </View>
         )}
 
@@ -1835,6 +2229,44 @@ Please log in and update your password under settings.`;
                 ) : (
                   <Text style={styles.webSubmitBtnText}>Create Employee Profile</Text>
                 )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
+      {/* Web PIN Configuration Modal */}
+      {showWebPinModal && (
+        <View style={styles.webModalOverlay}>
+          <View style={[styles.webModalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.webModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.webModalTitle, { color: colors.text }]}>Setup Chats PIN</Text>
+              <TouchableOpacity style={styles.webModalCloseBtn} onPress={() => { setShowWebPinModal(false); setNewPin(""); }}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 24 }}>
+              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 16 }}>
+                Enter a 4-digit code to secure locked conversations and prevent unauthorized access on this web browser.
+              </Text>
+              <View style={styles.webFormGroup}>
+                <Text style={[styles.webFormLabel, { color: colors.text }]}>Enter 4-Digit PIN</Text>
+                <TextInput
+                  style={[styles.webFormInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                  value={newPin}
+                  onChangeText={setNewPin}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                  secureTextEntry
+                  placeholder="****"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.webSubmitBtn, { backgroundColor: colors.accent }]}
+                onPress={handleSavePin}
+              >
+                <Text style={styles.webSubmitBtnText}>Save PIN</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

@@ -18,6 +18,14 @@ import { APP_CONFIG } from "../../constants/config";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../hooks/use-theme";
 
+const showAlert = (title: string, message: string) => {
+  if (Platform.OS === "web") {
+    window.alert(title ? `${title}: ${message}` : message);
+  } else {
+    Alert.alert(title, message);
+  }
+};
+
 export default function RegisterScreen() {
   const { colors, isDark } = useTheme();
   const [fullName, setFullName] = useState("");
@@ -50,14 +58,14 @@ export default function RegisterScreen() {
   const signUp = async () => {
     // 1. Agree to terms check
     if (!agreed) {
-      Alert.alert("Terms & Conditions", "You must agree to the Terms & Conditions to register.");
+      showAlert("Terms & Conditions", "You must agree to the Terms & Conditions to register.");
       return;
     }
 
     // 2. Validate inputs based on account type
     if (accountType === "individual") {
       if (!fullName.trim() || !username.trim() || !phone.trim() || !email.trim() || !password) {
-        Alert.alert("Error", "Please fill in all fields.");
+        showAlert("Error", "Please fill in all fields.");
         return;
       }
     } else {
@@ -71,13 +79,13 @@ export default function RegisterScreen() {
         !password ||
         !companyWebsite.trim()
       ) {
-        Alert.alert("Error", "Please enter Company Name, Branch, City, State, Pincode, Email, Password, and Website.");
+        showAlert("Error", "Please enter Company Name, Branch, City, State, Pincode, Email, Password, and Website.");
         return;
       }
     }
 
     if (password.length < 6) {
-      Alert.alert("Error", "Password must be at least 6 characters.");
+      showAlert("Error", "Password must be at least 6 characters.");
       return;
     }
 
@@ -96,7 +104,7 @@ export default function RegisterScreen() {
         .maybeSingle();
 
       if (existingUser) {
-        Alert.alert("Error", "Username already taken. Try another.");
+        showAlert("Error", "Username already taken. Try another.");
         return;
       }
 
@@ -115,14 +123,14 @@ export default function RegisterScreen() {
       });
 
       if (error) {
-        Alert.alert("Signup Failed", error.message);
+        showAlert("Signup Failed", error.message);
         return;
       }
 
       if (data.user) {
         // If identities is empty, the email is already in use by another account
         if (data.user.identities && data.user.identities.length === 0) {
-          Alert.alert("Signup Failed", "This email is already registered. Please login.");
+          showAlert("Signup Failed", "This email is already registered. Please login.");
           return;
         }
 
@@ -143,7 +151,7 @@ export default function RegisterScreen() {
             .single();
 
           if (companyError) {
-            Alert.alert("Company Error", companyError.message);
+            showAlert("Company Error", companyError.message);
             return;
           }
           if (companyData) {
@@ -166,18 +174,23 @@ export default function RegisterScreen() {
         });
 
         if (profileError) {
-          Alert.alert("Profile Error", profileError.message);
+          showAlert("Profile Error", profileError.message);
           return;
         }
 
-        Alert.alert(
-          "Account Created! 🎉",
-          `Welcome to ${APP_CONFIG.appName}! You can now sign in.`,
-          [{ text: "Sign In", onPress: () => router.replace("/(auth)/login") }]
-        );
+        if (Platform.OS === "web") {
+          window.alert(`Account Created! 🎉\nWelcome to ${APP_CONFIG.appName}! You can now sign in.`);
+          router.replace("/(auth)/login");
+        } else {
+          Alert.alert(
+            "Account Created! 🎉",
+            `Welcome to ${APP_CONFIG.appName}! You can now sign in.`,
+            [{ text: "Sign In", onPress: () => router.replace("/(auth)/login") }]
+          );
+        }
       }
     } catch (err: any) {
-      Alert.alert("Error", err.message);
+      showAlert("Error", err.message);
     } finally {
       setLoading(false);
     }
@@ -563,7 +576,7 @@ const styles = StyleSheet.create({
   inputIcon: { marginRight: 12 },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
     color: '#1E293B',
     fontWeight: '500',
   },

@@ -1,61 +1,55 @@
-import React, { useEffect, useState, useRef } from "react";
+import { APP_CONFIG } from "@/constants/config";
+import { ThemeName, Themes } from "@/constants/theme";
+import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
+import { ensureCompanyChats } from "@/services/chatService";
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Switch,
-  Alert,
-  Modal,
-  Image,
-  ActivityIndicator,
-  FlatList,
-  Dimensions,
-  Platform,
-} from "react-native";
-import { router, useFocusEffect } from "expo-router";
+  AutoDeleteInfo,
+  backupAllData,
+  checkAutoDeletePolicy,
+  performFullDataWipe,
+  restoreBackupFromFile,
+  updateAutoDeletePolicy,
+} from "@/services/storageService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as LocalAuthentication from "expo-local-authentication";
+import { createClient } from "@supabase/supabase-js";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
+import * as LocalAuthentication from "expo-local-authentication";
+import { useFocusEffect } from "expo-router";
 import {
-  User,
+  Building,
+  Check,
+  ChevronRight,
+  Database,
+  Download,
+  Lock,
+  LogOut,
+  Palette,
+  Plus,
+  QrCode,
   Settings,
   Shield,
-  Palette,
-  Database,
-  Building,
-  LogOut,
-  Camera,
-  ChevronRight,
-  Check,
-  Plus,
-  Send,
-  X,
-  AlertTriangle,
-  Download,
   Trash2,
-  Lock,
-  LayoutDashboard,
-  QrCode,
+  X
 } from "lucide-react-native";
-import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/hooks/use-theme";
-import { Themes, ThemeName } from "@/constants/theme";
-import { supabase } from "@/lib/supabase";
-import { APP_CONFIG } from "@/constants/config";
-import { createClient } from "@supabase/supabase-js";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  checkAutoDeletePolicy,
-  updateAutoDeletePolicy,
-  backupAllData,
-  performFullDataWipe,
-  AutoDeleteInfo,
-  restoreBackupFromFile,
-} from "@/services/storageService";
-import { ensureCompanyChats } from "@/services/chatService";
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from "react-native";
 
 const { width } = Dimensions.get("window");
 let isScanningGlobal = false;
@@ -772,33 +766,109 @@ export default function SettingsScreen() {
             Change the layout visuals instantly. Dark and Light configurations available.
           </Text>
           
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themesRow}>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              justifyContent: "space-between",
+              paddingVertical: 8,
+            }}
+          >
             {Object.keys(Themes).map((key) => {
               const item = Themes[key as ThemeName];
               const isSelected = themeName === key;
+
               return (
                 <TouchableOpacity
                   key={key}
-                  style={[
-                    styles.themeChip,
-                    { backgroundColor: item.background, borderColor: isSelected ? colors.accent : item.border },
-                    isSelected && { borderWidth: 2 },
-                  ]}
                   onPress={() => setTheme(key as ThemeName)}
+                  style={{
+                    width: "23%", // 4 cards per row
+                    aspectRatio: 0.8,
+                    marginBottom: 12,
+                    borderRadius: 12,
+                    padding: 6,
+                    backgroundColor: item.background,
+                    borderWidth: isSelected ? 2 : 1,
+                    borderColor: isSelected ? colors.accent : item.border,
+                    alignItems: "center",
+                  }}
                 >
-                  <View style={[styles.themePreviewColor, { backgroundColor: item.accent }]} />
-                  <Text style={[styles.themeChipText, { color: item.text }]}>
-                    {key.charAt(0).toUpperCase() + key.slice(1)}
+                  {/* Preview */}
+                  <View
+                    style={{
+                      width: "100%",
+                      flex: 1,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: item.border,
+                      backgroundColor: item.background,
+                      padding: 5,
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: "70%",
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: "#E5E7EB",
+                      }}
+                    />
+
+                    <View
+                      style={{
+                        alignSelf: "flex-end",
+                        width: "55%",
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: item.accent,
+                      }}
+                    />
+
+                    <View
+                      style={{
+                        width: "80%",
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: "#E5E7EB",
+                      }}
+                    />
+                  </View>
+
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      marginTop: 6,
+                      fontSize: 11,
+                      fontWeight: "600",
+                      color: item.text,
+                    }}
+                  >
+                    {key}
                   </Text>
+
                   {isSelected && (
-                    <View style={[styles.themeSelectedCheck, { backgroundColor: colors.accent }]}>
+                    <View
+                      style={{
+                        position: "absolute",
+                        top: 4,
+                        right: 4,
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: colors.accent,
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
                       <Check size={10} color="#FFF" />
                     </View>
                   )}
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
 
         {/* Data Cleanup & Retention Settings Section */}
@@ -1794,7 +1864,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 14,
+    fontSize: 16,
   },
   modalSaveBtn: {
     paddingVertical: 14,
