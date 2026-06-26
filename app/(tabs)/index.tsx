@@ -568,11 +568,11 @@ export default function HomeScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
-      <View dataSet={{ name: 'app-header-home' }} style={[styles.header, { 
+      <View {...({ dataSet: { name: 'app-header-home' } } as any)} style={[styles.header, { 
         paddingTop: Platform.OS === 'web' 
           ? 16
           : (insets.top > 0 ? insets.top + 12 : 16) 
-      }]}>
+       }]}>
         <TouchableOpacity onPress={() => setShowLockedSection(!showLockedSection)}>
           <Text style={styles.headerTitle}>{APP_CONFIG.appName}</Text>
           <Text style={styles.headerSub}>

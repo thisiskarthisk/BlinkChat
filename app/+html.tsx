@@ -38,6 +38,9 @@ export default function Root({ children }: { children: ReactNode }) {
           }
 
           html, body {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100% !important;
             height: 100% !important;
             height: 100dvh !important;
             margin: 0 !important;
@@ -82,17 +85,7 @@ export default function Root({ children }: { children: ReactNode }) {
             overflow: hidden;
           }
 
-          /* ── iOS standalone PWA: prevent the body from scrolling
-             when the virtual keyboard opens, which would push the
-             entire app upward and hide the input behind the keyboard.
-             position:fixed with inset:0 locks it in place. */
-          @media (display-mode: standalone) {
-            html, body {
-              position: fixed !important;
-              inset: 0 !important;
-              width: 100% !important;
-            }
-          }
+
 
           /* Smooth height transitions when keyboard opens/closes.
              The JS sets an explicit height on the chat container via
@@ -149,7 +142,6 @@ export default function Root({ children }: { children: ReactNode }) {
                   document.documentElement.scrollTop = 0;
                 }
               };
-              window.addEventListener('scroll', preventScroll, { passive: true });
               
               document.addEventListener('focusin', function() {
                 setTimeout(preventScroll, 50);

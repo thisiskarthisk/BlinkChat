@@ -522,7 +522,7 @@ export default function SearchScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View dataSet={{ name: 'app-header' }} style={styles.header}>
+      <View {...({ dataSet: { name: 'app-header' } } as any)} style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>←</Text>
         </TouchableOpacity>

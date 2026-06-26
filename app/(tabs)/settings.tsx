@@ -435,27 +435,32 @@ export default function SettingsScreen() {
   // Toggle biometrics usage
   const handleToggleBiometrics = async (value: boolean) => {
     if (!user?.id) return;
-    if (value) {
-      // Test if biometrics are supported/enrolled
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    try {
+      if (value) {
+        // Test if biometrics are supported/enrolled
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
-      if (!hasHardware || !isEnrolled) {
-        Alert.alert("Not Supported", "Biometric enrollment not found on this device.");
-        return;
+        if (!hasHardware || !isEnrolled) {
+          Alert.alert("Not Supported", "Biometric enrollment not found on this device.");
+          return;
+        }
+
+        const res = await LocalAuthentication.authenticateAsync({
+          promptMessage: "Confirm identity to enable Biometric Lock",
+        });
+
+        if (res.success) {
+          await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "true");
+          setBiometricsEnabled(true);
+        }
+      } else {
+        await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "false");
+        setBiometricsEnabled(false);
       }
-
-      const res = await LocalAuthentication.authenticateAsync({
-        promptMessage: "Confirm identity to enable Biometric Lock",
-      });
-
-      if (res.success) {
-        await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "true");
-        setBiometricsEnabled(true);
-      }
-    } else {
-      await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "false");
-      setBiometricsEnabled(false);
+    } catch (err) {
+      console.error("Biometrics error:", err);
+      Alert.alert("Not Supported", "Biometric authentication is not supported on this browser/platform.");
     }
   };
 

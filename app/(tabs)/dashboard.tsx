@@ -30,13 +30,15 @@ import {
   TouchableOpacity,
   View,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  useWindowDimensions
 } from "react-native";
 
 export default function DashboardScreen() {
   const { user, profile } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
 
   const [companyUsers, setCompanyUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -697,7 +699,7 @@ Please log in and update your password under settings.`;
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header bar */}
-      <View dataSet={{ name: 'app-header-dashboard' }} style={[styles.headerBar, { 
+      <View {...({ dataSet: { name: 'app-header-dashboard' } } as any)} style={[styles.headerBar, { 
         height: Platform.OS === 'web' ? 60 : 60 + insets.top,
         paddingTop: Platform.OS === 'web' ? 0 : insets.top,
         borderBottomColor: colors.border,
@@ -860,7 +862,11 @@ Please log in and update your password under settings.`;
             behavior="padding"
             style={{ width: "100%", alignItems: "center", justifyContent: "flex-end" }}
           >
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 400 }]}>
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+              style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 400, maxHeight: height * 0.85 }]}
+            >
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <Plus size={20} color={colors.accent} style={{ marginRight: 8 }} />
@@ -961,7 +967,11 @@ Please log in and update your password under settings.`;
             behavior="padding"
             style={{ width: "100%", alignItems: "center", justifyContent: "flex-end" }}
           >
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 400, maxHeight: "90%" }]}>
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+              style={[styles.modalContent, { backgroundColor: colors.surface, width: "100%", maxWidth: 400, maxHeight: height * 0.85 }]}
+            >
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {selectedEmployee?.id === user?.id ? "My Profile Details" : "Edit Employee Details"}

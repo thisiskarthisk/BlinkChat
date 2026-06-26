@@ -11654,31 +11654,20 @@ export default function ChatScreen() {
       if (typeof window !== "undefined" && window.visualViewport) {
         let lastHeight = window.visualViewport.height;
 
-        // Detect whether the browser natively supports
-        // interactive-widget=resizes-content. On Android Chrome it
-        // does — the CSS viewport shrinks automatically, so we must
-        // NOT also apply a JS height (that would double-shrink and
-        // create a huge gap). On iOS Safari it doesn't, so we need
-        // the JS fallback.
-        // Heuristic: iOS Safari doesn't have `chrome` on the UA and
-        // is identified by the platform check.
         const ua = navigator.userAgent || "";
         const isIOS = /iPad|iPhone|iPod/.test(ua) ||
           (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-        // Also apply on Firefox/Samsung etc. that don't support the
-        // meta tag — basically anything that's NOT desktop-Chrome or
-        // Android-Chrome.
-        const isAndroidChrome = /Android/.test(ua) && /Chrome\//.test(ua);
-        needsViewportHeightHack.current = !isAndroidChrome;
+        const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone === true;
+        needsViewportHeightHack.current = isIOS || isStandalone;
+
+        if (needsViewportHeightHack.current) {
+          setWebViewportHeight(window.visualViewport.height);
+        }
 
         const handleViewportChange = () => {
           const vp = window.visualViewport;
           const currentHeight = vp?.height || window.innerHeight;
 
-          // Only apply the JS height on browsers where
-          // interactive-widget isn't supported (mainly iOS Safari).
-          // On Android Chrome the CSS handles it — setting height
-          // here would cause double-shrinkage (= big gap).
           if (needsViewportHeightHack.current) {
             setWebViewportHeight(currentHeight);
           }
@@ -13137,7 +13126,9 @@ export default function ChatScreen() {
             activeOpacity={1}
             onPress={() => setShowAttachmentSheet(false)}
           >
-            <View
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
               style={{
                 backgroundColor: colors.cardBg,
                 borderTopLeftRadius: 24,
@@ -13236,7 +13227,7 @@ export default function ChatScreen() {
                   <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textSecondary }}>Cancel</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
 
@@ -13256,14 +13247,18 @@ export default function ChatScreen() {
             activeOpacity={1}
             onPress={() => setShowActionsModal(false)}
           >
-            <View style={{
-              backgroundColor: "#FFF",
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingVertical: 16,
-              paddingHorizontal: 20,
-              gap: 4
-            }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+              style={{
+                backgroundColor: "#FFF",
+                borderTopLeftRadius: 20,
+                borderTopRightRadius: 20,
+                paddingVertical: 16,
+                paddingHorizontal: 20,
+                gap: 4
+              }}
+            >
               <Text style={{ fontSize: 12, fontWeight: "700", color: "#6B7280", marginBottom: 8, textAlign: "center", letterSpacing: 0.5 }}>
                 MESSAGE OPTIONS
               </Text>
@@ -13341,7 +13336,7 @@ export default function ChatScreen() {
                   <Text style={{ fontSize: 16, color: "#EF4444", fontWeight: "700" }}>Delete for Everyone</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </TouchableOpacity>
           </TouchableOpacity>
         </Modal>
 

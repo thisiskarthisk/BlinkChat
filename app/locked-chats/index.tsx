@@ -121,7 +121,7 @@ export default function LockedChatsScreen() {
   };
 
   return (
-    <SafeAreaView dataSet={{ name: 'app-safe-area-container' }} style={styles.container}>
+    <SafeAreaView {...({ dataSet: { name: 'app-safe-area-container' } } as any)} style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>

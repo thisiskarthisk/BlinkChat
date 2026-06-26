@@ -56,6 +56,30 @@ function useKeyboardModalOffset() {
   const offset = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (Platform.OS === "web") {
+      if (typeof window === "undefined" || !window.visualViewport) return;
+
+      const handleViewport = () => {
+        const vp = window.visualViewport;
+        if (!vp) return;
+        const diff = window.innerHeight - vp.height;
+        const kbHeight = diff > 100 ? diff : 0;
+        
+        Animated.timing(offset, {
+          toValue: -kbHeight,
+          duration: 150,
+          useNativeDriver: true,
+        }).start();
+      };
+
+      window.visualViewport.addEventListener("resize", handleViewport);
+      handleViewport();
+
+      return () => {
+        window.visualViewport?.removeEventListener("resize", handleViewport);
+      };
+    }
+
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
@@ -85,7 +109,7 @@ function useKeyboardModalOffset() {
 }
 
 export default function ProfileScreen() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isWebOrTablet = width > 768;
 
   // Keyboard offset for profile edit & password modals
@@ -562,7 +586,7 @@ export default function ProfileScreen() {
       />
 
       {/* 1. Futuristic Glass Header */}
-      <View dataSet={{ name: 'app-header-profile' }} style={[styles.glassHeader, { 
+      <View {...({ dataSet: { name: 'app-header-profile' } } as any)} style={[styles.glassHeader, { 
         height: Platform.OS === 'web' ? 60 : 60 + insets.top, 
         paddingTop: Platform.OS === 'web' ? 0 : insets.top, 
         backgroundColor: cardBgColor, 
@@ -976,7 +1000,11 @@ export default function ProfileScreen() {
       <Modal visible={showProfileEdit} transparent animationType="fade" onRequestClose={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
         <TouchableOpacity style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} activeOpacity={1} onPress={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
           <Animated.View style={[{ width: "90%", maxWidth: 500 }, { transform: [{ translateY: kbOffset }] }]}>
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: "80%" }]}>
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+              style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: height * 0.8 }]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Edit Profile Details</Text>
                 <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowProfileEdit(false); }}>
@@ -1051,7 +1079,11 @@ export default function ProfileScreen() {
       <Modal visible={showPasswordChange} transparent animationType="fade" onRequestClose={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
         <TouchableOpacity style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]} activeOpacity={1} onPress={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
           <Animated.View style={[{ width: "90%", maxWidth: 500 }, { transform: [{ translateY: kbOffset }] }]}>
-            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: "80%" }]}>
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={Platform.OS === 'web' ? (e) => e.stopPropagation() : undefined}
+              style={[styles.modalContent, { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, maxHeight: height * 0.8 }]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Change Account Password</Text>
                 <TouchableOpacity onPress={() => { Keyboard.dismiss(); setShowPasswordChange(false); }}>
