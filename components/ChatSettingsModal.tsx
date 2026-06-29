@@ -282,7 +282,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import * as LocalAuthentication from "expo-local-authentication";
+import { authenticateBiometrics } from "@/services/biometricService";
 import {
   ArrowLeft,
   Bell,
@@ -632,27 +632,20 @@ export default function ChatSettingsModal({
         return;
       }
 
-      // Web: biometrics and Alert.prompt are not available.
-      // If PIN already set → show verify modal; otherwise → show set PIN modal.
+      // Web / Native: check if biometrics are enabled, and attempt authentication
+      const bioEnabled = await AsyncStorage.getItem(`biometrics_enabled_${user?.id}`);
+      if (bioEnabled === "true") {
+        const res = await authenticateBiometrics(user?.id || "", "Authenticate to lock this chat");
+        if (res.success) {
+          await proceedToLock();
+          return;
+        }
+      }
+
       if (Platform.OS === 'web') {
         setVerifyPin("");
         setShowPinVerify(true);
         return;
-      }
-
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-      if (hasHardware && isEnrolled) {
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: "Authenticate to lock this chat",
-          fallbackLabel: "Use PIN",
-        });
-
-        if (result.success) {
-          await proceedToLock();
-          return;
-        }
       }
 
       Alert.prompt(
@@ -727,22 +720,14 @@ export default function ChatSettingsModal({
     try {
       await AsyncStorage.setItem(`chat_pin_${user?.id}`, pin);
 
-      // On web biometrics aren't available — proceed directly to lock
-      if (Platform.OS !== 'web') {
-        const hasHardware = await LocalAuthentication.hasHardwareAsync();
-        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-        if (hasHardware && isEnrolled) {
-          const result = await LocalAuthentication.authenticateAsync({
-            promptMessage: "Authenticate to lock this chat",
-            fallbackLabel: "Use PIN",
-          });
-
-          if (result.success) {
-            await proceedToLock();
-            setShowPinSetup(false);
-            return;
-          }
+      // Check if biometrics are enabled, and attempt authentication
+      const bioEnabled = await AsyncStorage.getItem(`biometrics_enabled_${user?.id}`);
+      if (bioEnabled === "true") {
+        const res = await authenticateBiometrics(user?.id || "", "Authenticate to lock this chat");
+        if (res.success) {
+          await proceedToLock();
+          setShowPinSetup(false);
+          return;
         }
       }
 

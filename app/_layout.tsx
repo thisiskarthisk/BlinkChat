@@ -4,8 +4,9 @@ import { DarkTheme, DefaultTheme, ThemeProvider as NavThemeProvider } from "@rea
 import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect } from "react";
-import { View, Image, ActivityIndicator } from "react-native";
+import * as Notifications from "expo-notifications";
+import React, { useEffect, useRef } from "react";
+import { View, Image, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -28,6 +29,33 @@ function RootNav() {
   const segments = useSegments();
   const router = useRouter();
   const { isDark } = useTheme();
+  const notificationListener = useRef<any>(null);
+  const responseListener = useRef<any>(null);
+
+  // ── Handle notification tap → navigate to chat ──────────────────────────────
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    // Fired when user taps a notification while app is running
+    responseListener.current = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data as any;
+        if (data?.chatId && data?.type === "message") {
+          // Navigate to the specific chat
+          router.push({
+            pathname: "/chat/[id]",
+            params: { id: data.chatId, name: data.senderName || "" },
+          });
+        }
+      }
+    );
+
+    return () => {
+      if (responseListener.current) {
+        Notifications.removeNotificationSubscription(responseListener.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (loading) return;

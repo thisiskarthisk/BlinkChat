@@ -179,11 +179,11 @@ export default function RegisterScreen() {
         }
 
         if (Platform.OS === "web") {
-          window.alert(`Account Created! 🎉\nWelcome to ${APP_CONFIG.appName}! You can now sign in.`);
+          window.alert(`Account Created!\nWelcome to ${APP_CONFIG.appName}! You can now sign in.`);
           router.replace("/(auth)/login");
         } else {
           Alert.alert(
-            "Account Created! 🎉",
+            "Account Created!",
             `Welcome to ${APP_CONFIG.appName}! You can now sign in.`,
             [{ text: "Sign In", onPress: () => router.replace("/(auth)/login") }]
           );

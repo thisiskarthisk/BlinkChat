@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as LocalAuthentication from "expo-local-authentication";
+import { authenticateBiometrics } from "@/services/biometricService";
 import { router, useFocusEffect } from "expo-router";
-import { AlertTriangle, Bell, Check, ChevronRight, Lock, LogOut, Plus, Search, SquarePen, X } from "lucide-react-native";
+import { AlertTriangle, Bell, Check, ChevronRight, Lock, LogOut, Plus, Search, SquarePen, X, Users, MailOpen, Send } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -104,22 +104,22 @@ function getMessagePreview(lastMessage: any) {
   const type = lastMessage.message_type || "text";
   const message = lastMessage.message || "";
   
-  if (type === "image") return "📷 Photo";
-  if (type === "video") return "🎥 Video";
+  if (type === "image") return "Photo";
+  if (type === "video") return "Video";
   if (type === "audio") {
     const min = Math.floor((lastMessage.audio_duration || 0) / 60);
     const rem = (lastMessage.audio_duration || 0) % 60;
     const durStr = `${min}:${String(rem).padStart(2, "0")}`;
-    return `🎤 Voice Message (${durStr})`;
+    return `Voice Message (${durStr})`;
   }
   if (type === "file") {
     if (isAudioMessage(lastMessage)) {
-      return `🎵 ${lastMessage.file_name || "Audio File"}`;
+      return `${lastMessage.file_name || "Audio File"}`;
     }
-    return `📄 ${lastMessage.file_name || "File"}`;
+    return `${lastMessage.file_name || "File"}`;
   }
-  if (type === "location") return "📍 Location";
-  if (type === "live_location") return "📍 Live Location";
+  if (type === "location") return "Location";
+  if (type === "live_location") return "Live Location";
   
   let cleanText = message;
   if (cleanText.startsWith("|||reply_id:")) {
@@ -334,26 +334,20 @@ export default function HomeScreen() {
   }, [user?.id, search]);
 
   const handleUnlockLockedChats = async () => {
+    if (!user?.id) return;
     try {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-      if (hasHardware && isEnrolled) {
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: "Unlock your private chats",
-          fallbackLabel: "Use PIN",
-        });
-
-        if (result.success) {
+      const bioEnabled = await AsyncStorage.getItem(`biometrics_enabled_${user.id}`);
+      if (bioEnabled === "true") {
+        const res = await authenticateBiometrics(user.id, "Unlock your private chats");
+        if (res.success) {
           router.push("/locked-chats");
           return;
         }
       }
-
-      // Fallback to PIN if biometrics fail or not available
+      // Fallback to PIN if biometrics fail, not enabled, or not supported
       setShowPinModal(true);
     } catch (e) {
-      console.error(e);
+      console.error("Unlock error:", e);
       setShowPinModal(true);
     }
   };
@@ -585,10 +579,10 @@ export default function HomeScreen() {
 
               const senderName = sender?.full_name || sender?.username || "New Message";
               let bodyText = newMsg.message || "";
-              if (newMsg.message_type === "image") bodyText = "📷 Sent an image";
-              else if (newMsg.message_type === "video") bodyText = "🎥 Sent a video";
-              else if (newMsg.message_type === "audio") bodyText = "🎵 Sent an audio message";
-              else if (newMsg.message_type === "file") bodyText = "📁 Sent a file";
+              if (newMsg.message_type === "image") bodyText = "Sent an image";
+              else if (newMsg.message_type === "video") bodyText = "Sent a video";
+              else if (newMsg.message_type === "audio") bodyText = "Sent an audio message";
+              else if (newMsg.message_type === "file") bodyText = "Sent a file";
 
               const isMuted = await AsyncStorage.getItem(`chat_notifications_muted_${user?.id}_${newMsg.sender_id}`);
               if (isMuted !== "true") {
@@ -1004,7 +998,7 @@ export default function HomeScreen() {
             </View>
           ) : acceptedFriends.length === 0 ? (
             <View style={styles.modalCenter}>
-              <Text style={{ fontSize: 48, marginBottom: 12 }}>👥</Text>
+              <Users size={48} color={colors.textSecondary} style={{ marginBottom: 12 }} />
               <Text style={styles.modalEmptyTitle}>No friends yet</Text>
               <Text style={styles.modalEmptySub}>Discover and connect with new friends using the search bar.</Text>
               <TouchableOpacity
@@ -1111,7 +1105,7 @@ export default function HomeScreen() {
           ) : requestsTab === "received" ? (
             incomingRequests.length === 0 ? (
               <View style={styles.modalCenter}>
-                <Text style={{ fontSize: 48, marginBottom: 12 }}>📩</Text>
+                <MailOpen size={48} color={colors.textSecondary} style={{ marginBottom: 12 }} />
                 <Text style={styles.modalEmptyTitle}>No incoming requests</Text>
                 <Text style={styles.modalEmptySub}>When people send you chat requests, they'll appear here.</Text>
               </View>
@@ -1189,7 +1183,7 @@ export default function HomeScreen() {
             )
           ) : outgoingRequests.length === 0 ? (
             <View style={styles.modalCenter}>
-              <Text style={{ fontSize: 48, marginBottom: 12 }}>📤</Text>
+              <Send size={48} color={colors.textSecondary} style={{ marginBottom: 12 }} />
               <Text style={styles.modalEmptyTitle}>No sent requests</Text>
               <Text style={styles.modalEmptySub}>Your sent friend requests that are waiting for response will appear here.</Text>
             </View>

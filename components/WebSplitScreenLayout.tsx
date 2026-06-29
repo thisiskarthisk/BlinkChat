@@ -157,17 +157,17 @@ function getMessagePreview(lastMessage: any) {
   const type = lastMessage.message_type || "text";
   const message = lastMessage.message || "";
   
-  if (type === "image") return "📷 Photo";
-  if (type === "video") return "🎥 Video";
-  if (type === "audio") return "🎤 Voice Message";
+  if (type === "image") return "Photo";
+  if (type === "video") return "Video";
+  if (type === "audio") return "Voice Message";
   if (type === "file") {
     if (isAudioMessage(lastMessage)) {
-      return `🎵 ${lastMessage.file_name || "Audio File"}`;
+      return `${lastMessage.file_name || "Audio File"}`;
     }
-    return `📄 ${lastMessage.file_name || "File"}`;
+    return `${lastMessage.file_name || "File"}`;
   }
-  if (type === "location") return "📍 Location";
-  if (type === "live_location") return "📍 Live Location";
+  if (type === "location") return "Location";
+  if (type === "live_location") return "Live Location";
   
   let cleanText = message;
   if (cleanText.startsWith("|||reply_id:")) {
@@ -1926,7 +1926,7 @@ export default function WebSplitScreenLayout() {
                                   color: isMine ? theme.myText : colors.accent,
                                   textDecorationLine: "underline"
                                 }}>
-                                  📥 Download Video
+                                  Download Video
                                 </Text>
                               </TouchableOpacity>
                               {caption ? (
@@ -1963,7 +1963,7 @@ export default function WebSplitScreenLayout() {
                                   color: isMine ? theme.myText : colors.accent,
                                   textDecorationLine: "underline"
                                 }}>
-                                  📥 Download Audio
+                                  Download Audio
                                 </Text>
                               </TouchableOpacity>
                             </View>

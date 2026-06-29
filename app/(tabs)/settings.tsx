@@ -3,6 +3,11 @@ import { ThemeName, Themes } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
+import {
+  authenticateBiometrics,
+  isBiometricsSupported,
+  registerWebBiometrics
+} from "@/services/biometricService";
 import { ensureCompanyChats } from "@/services/chatService";
 import {
   AutoDeleteInfo,
@@ -16,9 +21,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as DocumentPicker from "expo-document-picker";
-import * as LocalAuthentication from "expo-local-authentication";
-import { useFocusEffect, router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
+  ArrowLeft,
   Building,
   Check,
   ChevronRight,
@@ -27,7 +32,6 @@ import {
   Lock,
   LogOut,
   Palette,
-  ArrowLeft,
   Plus,
   QrCode,
   Settings,
@@ -36,7 +40,6 @@ import {
   X
 } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -50,8 +53,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  useWindowDimensions
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 let isScanningGlobal = false;
@@ -60,6 +65,11 @@ export default function SettingsScreen() {
   const { user, profile, signOut, updateProfile } = useAuth();
   const { themeName, setTheme, colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+
+  // Show "Link Web/Desktop Device" option on any mobile view (native apps, PWAs, or regular mobile web browsers)
+  // but hide it on wider screen/desktop layouts (width >= 768)
+  const isMobileView = Platform.OS !== 'web' || windowWidth < 768;
 
   // Settings state
   const [loading, setLoading] = useState(false);
@@ -234,7 +244,19 @@ export default function SettingsScreen() {
         isScanningGlobal = false;
       } else {
         console.log("device_links updated successfully, rows updated:", updated.length);
-        Alert.alert("Success", "Device linked successfully!");
+        // ── Critical: Phone must refresh its own session immediately ──
+        // The tokens we just sent to the web are now shared. If the phone's
+        // autoRefreshToken fires before the web refreshes, it would rotate
+        // the shared refresh_token and break the web session.
+        // By refreshing now, the phone gets a NEW independent token pair,
+        // while the old tokens remain valid for the web to use.
+        try {
+          await supabase.auth.refreshSession();
+          console.log("Phone session refreshed — now has independent tokens from web.");
+        } catch (e) {
+          console.warn("Post-link phone refresh warning:", e);
+        }
+        Alert.alert("✅ Linked", "Web browser linked successfully! Your chats will now appear on the web.");
         setShowScanner(false);
         loadLinkedDevices();
       }
@@ -440,22 +462,37 @@ export default function SettingsScreen() {
     if (!user?.id) return;
     try {
       if (value) {
-        // Test if biometrics are supported/enrolled
-        const hasHardware = await LocalAuthentication.hasHardwareAsync();
-        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-
-        if (!hasHardware || !isEnrolled) {
-          Alert.alert("Not Supported", "Biometric enrollment not found on this device.");
+        // Test if biometrics are supported/enrolled on the device/browser
+        const supported = await isBiometricsSupported();
+        if (!supported) {
+          Alert.alert("Not Supported", "Biometric authentication is not supported or enrolled on this device/browser.");
           return;
         }
 
-        const res = await LocalAuthentication.authenticateAsync({
-          promptMessage: "Confirm identity to enable Biometric Lock",
-        });
-
-        if (res.success) {
-          await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "true");
-          setBiometricsEnabled(true);
+        if (Platform.OS === "web") {
+          // Register WebAuthn public key credential
+          const success = await registerWebBiometrics(
+            user.id,
+            user.email || "",
+            profile?.full_name || profile?.username || "User"
+          );
+          if (success) {
+            await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "true");
+            setBiometricsEnabled(true);
+            Alert.alert("Success", "FaceID / TouchID biometric lock enabled!");
+          } else {
+            Alert.alert("Error", "Failed to register biometric credentials.");
+          }
+        } else {
+          // Native platform
+          const res = await authenticateBiometrics(user.id, "Confirm identity to enable Biometric Lock");
+          if (res.success) {
+            await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "true");
+            setBiometricsEnabled(true);
+            Alert.alert("Success", "Biometric lock enabled!");
+          } else {
+            Alert.alert("Failed", res.error || "Biometric authentication failed.");
+          }
         }
       } else {
         await AsyncStorage.setItem(`biometrics_enabled_${user.id}`, "false");
@@ -762,6 +799,7 @@ export default function SettingsScreen() {
         borderBottomColor: colors.border,
         backgroundColor: colors.surface,
       }}>
+        {/* Arrow Left */}
         <TouchableOpacity onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
@@ -1022,8 +1060,8 @@ export default function SettingsScreen() {
             />
           </View>
 
-          {/* Link Device */}
-          {Platform.OS !== 'web' && (
+          {/* Link Device — visible on any mobile view layout, hidden on wider desktop/browser layouts */}
+          {isMobileView && (
             <TouchableOpacity style={styles.settingRow} onPress={() => { loadLinkedDevices(); setShowLinkedDevicesModal(true); }}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.settingLabel, { color: colors.text }]}>Link Web/Desktop Device</Text>

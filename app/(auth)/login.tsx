@@ -136,7 +136,23 @@ export default function LoginScreen() {
                 alert("Web Session Error: " + sessionError.message);
                 setQrStatus("waiting");
               } else {
-                console.log("Web session set successfully!");
+                console.log("Web session set successfully! Refreshing to get independent tokens...");
+                // ── Critical: Immediately refresh to get a NEW independent token pair ──
+                // The phone and web must NOT share the same refresh_token, because
+                // Supabase invalidates the old token each time either device refreshes.
+                // By refreshing here, the web gets its own token pair, independent of
+                // the phone — exactly like WhatsApp Web does.
+                try {
+                  const { error: refreshErr } = await supabase.auth.refreshSession();
+                  if (refreshErr) {
+                    console.warn("Web post-QR refresh warning:", refreshErr.message);
+                    // Not fatal — the initial session is still valid, just warn
+                  } else {
+                    console.log("Web now has its own independent session tokens.");
+                  }
+                } catch (e) {
+                  console.warn("Web post-QR refresh exception:", e);
+                }
                 // Save token locally to track the link row in Web layout (background logout checking)
                 await AsyncStorage.setItem("device_session_token", token);
               }
@@ -329,7 +345,7 @@ export default function LoginScreen() {
                         <Text style={[styles.webStepNumberText, { color: colors.textSecondary }]}>2</Text>
                       </View>
                       <Text style={[styles.webStepText, { color: colors.textSecondary }]}>
-                        Tap <Text style={[styles.webStepHighlight, { color: colors.text }]}>Settings ⚙️</Text> and select <Text style={[styles.webStepHighlight, { color: colors.text }]}>Linked Devices</Text>
+                        Tap <Text style={[styles.webStepHighlight, { color: colors.text }]}>Settings</Text> and select <Text style={[styles.webStepHighlight, { color: colors.text }]}>Linked Devices</Text>
                       </Text>
                     </View>
 

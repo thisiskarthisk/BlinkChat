@@ -244,7 +244,7 @@ export default function DashboardScreen() {
         minute: "2-digit",
       });
 
-      const formattedBroadcast = `⚠️ IMPORTANT UPDATE\n🏢 Company Name: ${profile.company_name}\n📝 Message: ${broadcastMessage}\n👤 Issued by: ${adminName}\n📅 Issue Date: ${todayStr}`;
+      const formattedBroadcast = `[IMPORTANT UPDATE]\nCompany Name: ${profile.company_name}\nMessage: ${broadcastMessage}\nIssued by: ${adminName}\nIssue Date: ${todayStr}`;
 
       for (const emp of employees) {
         const chatId = await createOrGetChat(user!.id, emp.id);

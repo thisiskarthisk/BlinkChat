@@ -10323,7 +10323,13 @@ import {
   Phone,
   Play,
   StopCircle,
-  X
+  X,
+  Camera,
+  Video as VideoIcon,
+  FileText,
+  MapPin,
+  Music,
+  Radio
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -11167,14 +11173,17 @@ function MessageBubble({
                 isMine ? styles.myLocationCard : styles.otherLocationCard
               ]}>
                 {/* Visual Map Grid Design */}
-                <View style={styles.locationMapGrid}>
-                  <Text style={{ fontSize: 28 }}>📍</Text>
+                <View style={[styles.locationMapGrid, { justifyContent: "center", alignItems: "center" }]}>
+                  <MapPin size={32} color="#2563EB" />
                 </View>
                 <View style={styles.locationCardFooter}>
                   <View style={{ flex: 1, marginRight: 4 }}>
-                    <Text style={[styles.locationTitle, isMine ? styles.myLocationText : styles.otherLocationText]} numberOfLines={1}>
-                      {type === "live_location" ? "🟢 Live Location" : "Shared Location"}
-                    </Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      {type === "live_location" && <Radio size={14} color="#EF4444" />}
+                      <Text style={[styles.locationTitle, isMine ? styles.myLocationText : styles.otherLocationText]} numberOfLines={1}>
+                        {type === "live_location" ? "Live Location" : "Shared Location"}
+                      </Text>
+                    </View>
                     <Text style={[styles.locationSubtitle, isMine ? styles.myTime : styles.otherTime]}>
                       Tap to open in Map View
                     </Text>
@@ -11318,7 +11327,7 @@ function MediaModal({
 
           {resolvedType === "audio" && (
             <View style={{ alignItems: "center", justifyContent: "center", padding: 24, width: "100%" }}>
-              <Text style={{ fontSize: 64, marginBottom: 20 }}>🎵</Text>
+              <Music size={64} color="#FFF" style={{ marginBottom: 20 }} />
               <Text style={[styles.fileNameLarge, { color: "#FFF", textAlign: "center", marginBottom: 30 }]} numberOfLines={2}>
                 {fileName || "Audio File"}
               </Text>
@@ -11340,7 +11349,7 @@ function MediaModal({
 
           {resolvedType === "file" && (
             <View style={styles.filePreview}>
-              <Text style={styles.fileIconLarge}>📄</Text>
+              <FileText size={64} color="#FFF" style={{ marginBottom: 20 }} />
               <Text style={styles.fileNameLarge}>{fileName}</Text>
               <TouchableOpacity style={styles.openFileBtn} onPress={handleShare}>
                 <ExternalLink color="#FFF" size={20} />
@@ -13170,7 +13179,7 @@ export default function ChatScreen() {
                     setTimeout(pickImage, 100);
                   }}
                 >
-                  <Text style={{ fontSize: 22, marginRight: 16 }}>📷</Text>
+                  <Camera size={22} color={colors.text} style={{ marginRight: 16 }} />
                   <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text }}>Photo / Image</Text>
                 </TouchableOpacity>
 
@@ -13187,7 +13196,7 @@ export default function ChatScreen() {
                     setTimeout(pickVideo, 100);
                   }}
                 >
-                  <Text style={{ fontSize: 22, marginRight: 16 }}>🎥</Text>
+                  <VideoIcon size={22} color={colors.text} style={{ marginRight: 16 }} />
                   <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text }}>Video (max 1 min)</Text>
                 </TouchableOpacity>
 
@@ -13204,7 +13213,7 @@ export default function ChatScreen() {
                     setTimeout(pickFile, 100);
                   }}
                 >
-                  <Text style={{ fontSize: 22, marginRight: 16 }}>📄</Text>
+                  <FileText size={22} color={colors.text} style={{ marginRight: 16 }} />
                   <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text }}>File / Document</Text>
                 </TouchableOpacity>
 
@@ -13221,7 +13230,7 @@ export default function ChatScreen() {
                     setTimeout(sendLocation, 100);
                   }}
                 >
-                  <Text style={{ fontSize: 22, marginRight: 16 }}>📍</Text>
+                  <MapPin size={22} color={colors.text} style={{ marginRight: 16 }} />
                   <Text style={{ fontSize: 16, fontWeight: "600", color: colors.text }}>Location</Text>
                 </TouchableOpacity>
 
